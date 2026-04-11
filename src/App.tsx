@@ -1,23 +1,41 @@
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
+import { useLogStore } from "@/stores/logStore";
 import { TopBar } from "@/components/layout/TopBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MainPanel } from "@/components/layout/MainPanel";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { ConfigPreview } from "@/components/ssh-config/ConfigPreview";
+import type { AgentStatusEvent } from "@/types";
 
 type Tab = "profiles" | "config";
 
 function App() {
   const { fetchProfiles } = useProfileStore();
   const { fetchActiveProfile } = useAppStore();
+  const { addLog } = useLogStore();
   const [activeTab, setActiveTab] = useState<Tab>("profiles");
 
   useEffect(() => {
     fetchProfiles();
     fetchActiveProfile();
   }, [fetchProfiles, fetchActiveProfile]);
+
+  // Listen for background agent-status events from Rust
+  useEffect(() => {
+    const unlisten = listen<AgentStatusEvent>("agent-status", (event) => {
+      addLog({
+        action: "agent",
+        detail: event.payload.status,
+        level: event.payload.success ? "info" : "warn",
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [addLog]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">

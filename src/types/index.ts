@@ -61,6 +61,11 @@ export interface ActivationResult {
   git_ssh_command: string;
 }
 
+export interface AgentStatusEvent {
+  status: string;
+  success: boolean;
+}
+
 export interface ConnectionTestResult {
   success: boolean;
   output: string;
