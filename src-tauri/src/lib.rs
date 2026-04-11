@@ -4,7 +4,7 @@ mod models;
 mod services;
 mod state;
 
-use services::profile_service;
+use services::{profile_service, repo_mapping_service};
 use state::AppState;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
@@ -24,8 +24,9 @@ pub fn run() {
     // Load persisted data
     let profiles = profile_service::load_profiles().unwrap_or_default();
     let active_id = profile_service::load_active_profile_id().unwrap_or(None);
+    let repo_mappings = repo_mapping_service::load_mappings().unwrap_or_default();
 
-    let app_state = AppState::from_persisted(profiles, active_id);
+    let app_state = AppState::from_persisted(profiles, active_id, repo_mappings);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -114,6 +115,17 @@ pub fn run() {
             commands::ssh_config::backup_ssh_config,
             commands::git::get_git_ssh_command,
             commands::git::test_ssh_connection,
+            commands::repo_mappings::get_repo_mappings,
+            commands::repo_mappings::get_repo_mappings_for_profile,
+            commands::repo_mappings::create_repo_mapping,
+            commands::repo_mappings::delete_repo_mapping,
+            commands::repo_mappings::update_repo_mapping_scope,
+            commands::git_identity::get_current_git_identity,
+            commands::git_identity::get_repo_git_identity,
+            commands::git_identity::sync_git_identity,
+            commands::repo_detection::resolve_repo_path,
+            commands::repo_detection::check_repo_mapping,
+            commands::repo_detection::auto_switch_for_repo,
             update_tray_tooltip,
         ])
         .run(tauri::generate_context!())
