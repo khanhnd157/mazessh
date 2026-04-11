@@ -1,3 +1,5 @@
+use std::process::Command;
+
 use crate::models::profile::SshProfile;
 
 pub fn build_git_ssh_command(profile: &SshProfile) -> String {
@@ -21,7 +23,10 @@ pub fn build_env_file_content(profile: &SshProfile) -> String {
     let ssh_command = build_git_ssh_command(profile);
     let mut content = String::new();
     content.push_str(&format!("export GIT_SSH_COMMAND='{}'\n", ssh_command));
-    content.push_str(&format!("# Active profile: {} ({})\n", profile.name, profile.provider));
+    content.push_str(&format!(
+        "# Active profile: {} ({})\n",
+        profile.name, profile.provider
+    ));
     content
 }
 
@@ -42,6 +47,160 @@ pub fn clear_env_file() -> Result<(), std::io::Error> {
         std::fs::write(&env_path, "# No active profile\n")?;
     }
     Ok(())
+}
+
+// ── SSH Agent integration (Windows) ──────────────────────────────────
+
+/// Ensure the Windows OpenSSH Authentication Agent service is running.
+/// Returns Ok(true) if agent is running, Ok(false) if failed to start.
+pub fn ensure_agent_running() -> Result<bool, String> {
+    // Check if agent is already running
+    let status = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-Service ssh-agent).Status",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let status_str = String::from_utf8_lossy(&status.stdout).trim().to_string();
+    if status_str == "Running" {
+        return Ok(true);
+    }
+
+    // Try to start the service (requires admin for first-time, but if StartType=Manual it may work)
+    let start = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Start-Service ssh-agent",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !start.status.success() {
+        // Try with elevated privileges
+        let elevate = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Start-Process powershell -ArgumentList '-NoProfile -Command \"Set-Service ssh-agent -StartupType Manual; Start-Service ssh-agent\"' -Verb RunAs -Wait",
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+
+        if !elevate.status.success() {
+            return Ok(false);
+        }
+    }
+
+    // Verify it started
+    let verify = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-Service ssh-agent).Status",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let verify_str = String::from_utf8_lossy(&verify.stdout).trim().to_string();
+    Ok(verify_str == "Running")
+}
+
+/// Clear all keys from agent, then add the specified key.
+/// This ensures only one identity is active at a time.
+pub fn agent_switch_key(key_path: &str) -> Result<String, String> {
+    let ssh_add = find_ssh_add();
+
+    // Remove all existing keys
+    let _ = Command::new(&ssh_add).arg("-D").output();
+
+    // Add the new key
+    let output = Command::new(&ssh_add)
+        .arg(key_path)
+        .output()
+        .map_err(|e| format!("Failed to run ssh-add: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr);
+
+    if output.status.success() || combined.contains("Identity added") {
+        Ok(combined.trim().to_string())
+    } else {
+        Err(combined.trim().to_string())
+    }
+}
+
+/// Remove all keys from agent
+pub fn agent_clear_keys() -> Result<(), String> {
+    let ssh_add = find_ssh_add();
+    let _ = Command::new(&ssh_add).arg("-D").output();
+    Ok(())
+}
+
+/// List keys currently in agent
+#[allow(dead_code)]
+pub fn agent_list_keys() -> Result<String, String> {
+    let ssh_add = find_ssh_add();
+    let output = Command::new(&ssh_add)
+        .arg("-l")
+        .output()
+        .map_err(|e| format!("Failed to run ssh-add: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        Ok(stdout.trim().to_string())
+    } else {
+        Err(stderr.trim().to_string())
+    }
+}
+
+/// Set GIT_SSH_COMMAND as a persistent user environment variable on Windows
+/// so all new terminal sessions pick it up.
+pub fn set_user_env_git_ssh_command(profile: &SshProfile) -> Result<(), String> {
+    let ssh_command = build_git_ssh_command(profile);
+
+    Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "[Environment]::SetEnvironmentVariable('GIT_SSH_COMMAND', '{}', 'User')",
+                ssh_command.replace("'", "''")
+            ),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to set env: {}", e))?;
+
+    Ok(())
+}
+
+/// Clear GIT_SSH_COMMAND from user environment
+pub fn clear_user_env_git_ssh_command() -> Result<(), String> {
+    Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "[Environment]::SetEnvironmentVariable('GIT_SSH_COMMAND', $null, 'User')",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to clear env: {}", e))?;
+
+    Ok(())
+}
+
+fn find_ssh_add() -> String {
+    let system_path = std::path::Path::new("C:\\Windows\\System32\\OpenSSH\\ssh-add.exe");
+    if system_path.exists() {
+        system_path.to_string_lossy().to_string()
+    } else {
+        "ssh-add".to_string()
+    }
 }
 
 #[cfg(test)]
