@@ -14,13 +14,17 @@ import {
   KeyRound,
   CheckCircle2,
   XCircle,
+  FolderGit2,
+  Plus,
 } from "lucide-react";
 import { ProfileForm } from "./ProfileForm";
+import { AddRepoMappingDialog } from "@/components/repos/AddRepoMappingDialog";
 import { toast } from "sonner";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useRepoMappingStore } from "@/stores/repoMappingStore";
 import { useLogStore } from "@/stores/logStore";
-import type { ConnectionTestResult, SshProfile } from "@/types";
+import type { ConnectionTestResult, RepoMappingSummary, SshProfile } from "@/types";
 import { getProviderLabel } from "@/types";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -36,12 +40,17 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
   const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showAddRepo, setShowAddRepo] = useState(false);
+  const [profileMappings, setProfileMappings] = useState<RepoMappingSummary[]>([]);
+  const { fetchMappingsForProfile, deleteMapping } = useRepoMappingStore();
 
   // Reset state when switching profiles
   useEffect(() => {
     setTestResult(null);
     setShowEdit(false);
-  }, [profile.id]);
+    setShowAddRepo(false);
+    fetchMappingsForProfile(profile.id).then(setProfileMappings);
+  }, [profile.id, fetchMappingsForProfile]);
 
   const isActive = activeProfile?.id === profile.id;
 
@@ -231,6 +240,78 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
             {testResult.output}
           </pre>
         </div>
+      )}
+
+      {/* Mapped Repos */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <FolderGit2 size={12} />
+            Mapped Repositories
+            {profileMappings.length > 0 && (
+              <span className="text-muted-foreground/50">{profileMappings.length}</span>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowAddRepo(true)}
+            className="flex items-center gap-1 text-[11px] text-primary hover:underline"
+          >
+            <Plus size={11} />
+            Map Repo
+          </button>
+        </div>
+        {profileMappings.length === 0 ? (
+          <p className="text-xs text-muted-foreground/50 py-2">
+            No repositories mapped to this profile
+          </p>
+        ) : (
+          <div className="space-y-1">
+            {profileMappings.map((m) => (
+              <div
+                key={m.id}
+                className="group flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/30 text-xs"
+              >
+                <FolderGit2 size={13} className="text-muted-foreground shrink-0" />
+                <span className="font-medium">{m.repo_name}</span>
+                <span className="text-muted-foreground font-mono truncate flex-1">
+                  {m.repo_path}
+                </span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
+                  m.git_config_scope === "local"
+                    ? "bg-primary/15 text-primary"
+                    : "bg-muted text-muted-foreground"
+                }`}>
+                  {m.git_config_scope}
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await deleteMapping(m.id);
+                    setProfileMappings((prev) => prev.filter((p) => p.id !== m.id));
+                    toast.success(`Removed ${m.repo_name}`);
+                  }}
+                  title="Remove"
+                  className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Add repo mapping modal */}
+      {showAddRepo && (
+        <AddRepoMappingDialog
+          preselectedProfileId={profile.id}
+          onClose={async () => {
+            setShowAddRepo(false);
+            const updated = await fetchMappingsForProfile(profile.id);
+            setProfileMappings(updated);
+          }}
+        />
       )}
 
       {/* Metadata */}

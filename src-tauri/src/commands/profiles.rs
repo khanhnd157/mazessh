@@ -5,7 +5,7 @@ use crate::error::MazeSshError;
 use crate::models::profile::{
     CreateProfileInput, ProfileSummary, SshProfile, UpdateProfileInput,
 };
-use crate::services::{profile_service, security};
+use crate::services::{profile_service, repo_mapping_service, security};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -130,6 +130,13 @@ pub fn delete_profile(id: String, state: State<'_, AppState>) -> Result<(), Maze
     }
 
     profile_service::save_profiles(&inner.profiles)?;
+
+    // Cascade: remove repo mappings for this profile
+    let had_mappings = inner.repo_mappings.iter().any(|m| m.profile_id == id);
+    inner.repo_mappings.retain(|m| m.profile_id != id);
+    if had_mappings {
+        let _ = repo_mapping_service::save_mappings(&inner.repo_mappings);
+    }
 
     // Remove passphrase from keyring
     let _ = security::delete_passphrase(&id);

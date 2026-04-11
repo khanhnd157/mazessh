@@ -72,6 +72,43 @@ export interface ConnectionTestResult {
   profile_name: string;
 }
 
+// ── M2: Repo Mapping Types ──
+
+export type GitConfigScope = "local" | "global";
+
+export interface RepoMapping {
+  id: string;
+  repo_path: string;
+  repo_name: string;
+  profile_id: string;
+  git_config_scope: GitConfigScope;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RepoMappingSummary {
+  id: string;
+  repo_path: string;
+  repo_name: string;
+  profile_id: string;
+  profile_name: string;
+  git_config_scope: GitConfigScope;
+}
+
+export interface CreateRepoMappingInput {
+  repo_path: string;
+  profile_id: string;
+  git_config_scope: GitConfigScope;
+}
+
+export interface GitIdentityInfo {
+  user_name: string;
+  user_email: string;
+  scope: string;
+}
+
+// ── Helpers ──
+
 export function getProviderLabel(provider: Provider): string {
   if (typeof provider === "string") {
     return { github: "GitHub", gitlab: "GitLab", gitea: "Gitea", bitbucket: "Bitbucket" }[provider] ?? provider;

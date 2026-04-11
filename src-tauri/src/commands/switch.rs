@@ -3,7 +3,7 @@ use tauri::{Emitter, State};
 
 use crate::error::MazeSshError;
 use crate::models::profile::ProfileSummary;
-use crate::services::{profile_service, ssh_engine};
+use crate::services::{git_identity_service, profile_service, ssh_engine};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +69,15 @@ pub async fn activate_profile(
                 status_parts.push("Could not start ssh-agent (may need admin)".to_string())
             }
             Err(e) => status_parts.push(format!("Agent error: {}", e)),
+        }
+
+        // Sync global git identity
+        match git_identity_service::set_git_identity_global(
+            &profile_for_bg.git_username,
+            &profile_for_bg.email,
+        ) {
+            Ok(()) => status_parts.push(format!("Git: {}", profile_for_bg.git_username)),
+            Err(e) => status_parts.push(format!("Git identity failed: {}", e)),
         }
 
         let success = status_parts.iter().any(|s| s.contains("loaded"));

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { commands } from "@/lib/tauri-commands";
-import type { ActivationResult, ConnectionTestResult, ProfileSummary } from "@/types";
+import type { ActivationResult, ConnectionTestResult, GitIdentityInfo, ProfileSummary } from "@/types";
 import { getProviderLabel } from "@/types";
 
 function updateTrayTooltip(profile: ProfileSummary | null) {
@@ -14,17 +14,20 @@ function updateTrayTooltip(profile: ProfileSummary | null) {
 interface AppStore {
   activeProfile: ProfileSummary | null;
   lastActivation: ActivationResult | null;
+  currentGitIdentity: GitIdentityInfo | null;
   loading: boolean;
 
   fetchActiveProfile: () => Promise<void>;
   activateProfile: (id: string) => Promise<ActivationResult>;
   deactivateProfile: () => Promise<void>;
   testConnection: (id: string) => Promise<ConnectionTestResult>;
+  fetchGitIdentity: () => Promise<void>;
 }
 
 export const useAppStore = create<AppStore>((set) => ({
   activeProfile: null,
   lastActivation: null,
+  currentGitIdentity: null,
   loading: false,
 
   fetchActiveProfile: async () => {
@@ -54,5 +57,14 @@ export const useAppStore = create<AppStore>((set) => ({
 
   testConnection: async (id: string) => {
     return await commands.testSshConnection(id);
+  },
+
+  fetchGitIdentity: async () => {
+    try {
+      const identity = await commands.getCurrentGitIdentity();
+      set({ currentGitIdentity: identity });
+    } catch {
+      set({ currentGitIdentity: null });
+    }
   },
 }));

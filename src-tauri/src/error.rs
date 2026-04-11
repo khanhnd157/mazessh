@@ -23,6 +23,18 @@ pub enum MazeSshError {
 
     #[error("SSH connection failed: {0}")]
     ConnectionFailed(String),
+
+    #[error("Repo mapping not found: {0}")]
+    RepoMappingNotFound(String),
+
+    #[error("Not a git repository: {0}")]
+    NotAGitRepo(PathBuf),
+
+    #[error("Git config error: {0}")]
+    GitConfigError(String),
+
+    #[error("Duplicate mapping for repo: {0}")]
+    DuplicateMapping(String),
 }
 
 impl Serialize for MazeSshError {
