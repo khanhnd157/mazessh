@@ -139,4 +139,4 @@ MIT
 
 ## Author
 
-Built by [@khanhnd](https://github.com/khanhnd)
+Built by [@khanhnd157](https://github.com/khanhnd157) — open source with ❤️
