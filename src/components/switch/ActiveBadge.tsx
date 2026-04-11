@@ -1,3 +1,4 @@
+import { Circle } from "lucide-react";
 import type { ProfileSummary } from "@/types";
 import { getProviderLabel } from "@/types";
 
@@ -8,15 +9,18 @@ interface ActiveBadgeProps {
 export function ActiveBadge({ profile }: ActiveBadgeProps) {
   if (!profile) {
     return (
-      <span className="px-2.5 py-1 text-xs rounded-full bg-secondary text-muted-foreground">
+      <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md bg-secondary text-muted-foreground">
+        <Circle size={6} className="fill-muted-foreground" />
         No active profile
       </span>
     );
   }
 
   return (
-    <span className="px-2.5 py-1 text-xs rounded-full bg-primary/20 text-primary font-medium">
-      {profile.name} ({getProviderLabel(profile.provider)})
+    <span className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md bg-primary/15 text-primary font-medium">
+      <Circle size={6} className="fill-success text-success animate-pulse" />
+      {profile.name}
+      <span className="text-primary/60">({getProviderLabel(profile.provider)})</span>
     </span>
   );
 }
