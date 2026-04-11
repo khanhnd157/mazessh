@@ -3,8 +3,13 @@ import type {
   ActivationResult,
   ConnectionTestResult,
   CreateProfileInput,
+  CreateRepoMappingInput,
   DetectedKey,
+  GitConfigScope,
+  GitIdentityInfo,
   ProfileSummary,
+  RepoMapping,
+  RepoMappingSummary,
   SshProfile,
   UpdateProfileInput,
 } from "@/types";
@@ -39,4 +44,31 @@ export const commands = {
     invoke<string>("get_git_ssh_command", { id }),
   testSshConnection: (id: string) =>
     invoke<ConnectionTestResult>("test_ssh_connection", { id }),
+
+  // Repo Mappings
+  getRepoMappings: () => invoke<RepoMappingSummary[]>("get_repo_mappings"),
+  getRepoMappingsForProfile: (profileId: string) =>
+    invoke<RepoMappingSummary[]>("get_repo_mappings_for_profile", { profileId }),
+  createRepoMapping: (input: CreateRepoMappingInput) =>
+    invoke<RepoMapping>("create_repo_mapping", { input }),
+  deleteRepoMapping: (id: string) =>
+    invoke<void>("delete_repo_mapping", { id }),
+  updateRepoMappingScope: (id: string, scope: GitConfigScope) =>
+    invoke<RepoMapping>("update_repo_mapping_scope", { id, scope }),
+
+  // Git Identity
+  getCurrentGitIdentity: () =>
+    invoke<GitIdentityInfo>("get_current_git_identity"),
+  getRepoGitIdentity: (repoPath: string) =>
+    invoke<GitIdentityInfo>("get_repo_git_identity", { repoPath }),
+  syncGitIdentity: (profileId: string, repoPath: string | null, scope: GitConfigScope) =>
+    invoke<void>("sync_git_identity", { profileId, repoPath, scope }),
+
+  // Repo Detection
+  resolveRepoPath: (path: string) =>
+    invoke<string | null>("resolve_repo_path", { path }),
+  checkRepoMapping: (path: string) =>
+    invoke<RepoMappingSummary | null>("check_repo_mapping", { path }),
+  autoSwitchForRepo: (path: string) =>
+    invoke<ActivationResult | null>("auto_switch_for_repo", { path }),
 };
