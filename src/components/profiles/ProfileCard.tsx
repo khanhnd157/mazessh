@@ -1,5 +1,7 @@
+import { Check } from "lucide-react";
 import type { ProfileSummary } from "@/types";
 import { getProviderLabel } from "@/types";
+import { ProviderIcon } from "./ProviderIcon";
 
 interface ProfileCardProps {
   profile: ProfileSummary;
@@ -7,39 +9,35 @@ interface ProfileCardProps {
   onClick: () => void;
 }
 
-const providerColors: Record<string, string> = {
-  github: "bg-gray-700",
-  gitlab: "bg-orange-700",
-  gitea: "bg-green-700",
-  bitbucket: "bg-blue-700",
-};
-
 export function ProfileCard({ profile, isSelected, onClick }: ProfileCardProps) {
-  const providerKey = typeof profile.provider === "string" ? profile.provider : "custom";
-  const colorClass = providerColors[providerKey] || "bg-purple-700";
-
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full text-left px-3 py-2.5 rounded-md transition-colors ${
+      className={`group w-full text-left px-3 py-2.5 rounded-lg transition-all ${
         isSelected
-          ? "bg-accent border border-primary/30"
-          : "hover:bg-accent/50"
+          ? "bg-primary/10 ring-1 ring-primary/25"
+          : "hover:bg-accent/60"
       }`}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`w-2 h-2 rounded-full ${profile.is_active ? "bg-green-500" : colorClass}`} />
+        <div className="relative shrink-0">
+          <ProviderIcon provider={profile.provider} size={18} />
+          {profile.is_active && (
+            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-success ring-2 ring-background" />
+          )}
+        </div>
         <div className="min-w-0 flex-1">
-          <div className="font-medium text-sm truncate">{profile.name}</div>
-          <div className="text-xs text-muted-foreground truncate">
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium text-[13px] truncate">{profile.name}</span>
+            {profile.is_active && (
+              <Check size={12} className="text-success shrink-0" />
+            )}
+          </div>
+          <div className="text-[11px] text-muted-foreground truncate mt-0.5">
             {getProviderLabel(profile.provider)} · {profile.email}
           </div>
         </div>
-        {profile.is_active && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-medium shrink-0">
-            ACTIVE
-          </span>
-        )}
       </div>
     </button>
   );
