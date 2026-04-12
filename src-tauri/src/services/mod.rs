@@ -8,6 +8,7 @@ pub mod repo_detection_service;
 pub mod repo_mapping_service;
 #[allow(dead_code)]
 pub mod security;
+#[cfg(feature = "desktop")]
 pub mod session_service;
 pub mod settings_service;
 pub mod ssh_engine;
