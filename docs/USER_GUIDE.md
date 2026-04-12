@@ -1,240 +1,240 @@
 # Maze SSH — User Guide
 
-Hướng dẫn sử dụng ứng dụng Maze SSH Desktop cho việc quản lý SSH Identity trong Git Workflows.
+A guide to using the Maze SSH desktop application for managing SSH identities in Git workflows.
 
-## Mục lục
+## Table of Contents
 
-1. [Giới thiệu](#giới-thiệu)
-2. [Cài đặt](#cài-đặt)
-3. [Giao diện chính](#giao-diện-chính)
-4. [Quản lý Profile](#quản-lý-profile)
-5. [Chuyển đổi Profile](#chuyển-đổi-profile)
+1. [Introduction](#introduction)
+2. [Installation](#installation)
+3. [Main Interface](#main-interface)
+4. [Managing Profiles](#managing-profiles)
+5. [Switching Profiles](#switching-profiles)
 6. [Repo Mapping](#repo-mapping)
 7. [SSH Config](#ssh-config)
-8. [Bảo mật](#bảo-mật)
-9. [Phím tắt](#phím-tắt)
-10. [Xử lý sự cố](#xử-lý-sự-cố)
+8. [Security](#security)
+9. [Keyboard Shortcuts](#keyboard-shortcuts)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
-## Giới thiệu
+## Introduction
 
-Maze SSH giúp developer quản lý nhiều SSH Identity (GitHub, GitLab, Gitea, Bitbucket) trên cùng một máy tính. Thay vì chỉnh sửa `~/.ssh/config` thủ công, bạn chỉ cần click để chuyển đổi giữa các tài khoản.
+Maze SSH helps developers manage multiple SSH identities (GitHub, GitLab, Gitea, Bitbucket) on the same machine. Instead of manually editing `~/.ssh/config`, you can switch between accounts with a single click.
 
-### Maze SSH làm gì khi bạn switch profile?
+### What happens when you switch a profile?
 
-1. Load SSH key vào Windows SSH Agent (`ssh-add`)
-2. Set biến môi trường `GIT_SSH_COMMAND` cho tất cả terminal mới
-3. Cập nhật `git config user.name` và `user.email`
-4. Ghi file env tại `~/.maze-ssh/env` để terminal hiện tại source
+1. Loads the SSH key into the Windows SSH Agent (`ssh-add`)
+2. Sets the `GIT_SSH_COMMAND` environment variable for all new terminals
+3. Updates `git config user.name` and `user.email`
+4. Writes an env file at `~/.maze-ssh/env` for the current terminal to source
 
-Kết quả: mọi thao tác `git push`, `git pull`, `git clone` đều dùng đúng SSH key.
-
----
-
-## Cài đặt
-
-### Yêu cầu hệ thống
-
-- Windows 10/11 (hoặc macOS, Linux)
-- OpenSSH đã cài sẵn (Windows 10+ có sẵn)
-- Git đã cài
-
-### Tải và cài đặt
-
-Tải installer từ [GitHub Releases](https://github.com/khanhnd157/mazessh/releases):
-
-| Hệ điều hành | File |
-| ------------- | ---- |
-| Windows | `Maze.SSH_x64-setup.exe` hoặc `Maze.SSH_x64_en-US.msi` |
-| macOS Intel | `Maze.SSH_x64.dmg` |
-| macOS Apple Silicon | `Maze.SSH_aarch64.dmg` |
-| Linux (Debian/Ubuntu) | `Maze.SSH_amd64.deb` |
-| Linux (Fedora/RHEL) | `Maze.SSH-x86_64.rpm` |
-| Linux (Universal) | `Maze.SSH_amd64.AppImage` |
-
-### Sau khi cài đặt
-
-Ứng dụng tự động:
-
-- Quét SSH keys có sẵn trong `~/.ssh/`
-- Khởi động Windows SSH Agent service nếu chưa chạy
-- Hiển thị trong system tray
+Result: all `git push`, `git pull`, and `git clone` operations use the correct SSH key.
 
 ---
 
-## Giao diện chính
+## Installation
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ [Logo] Maze SSH | ● Profile Name  Provider  [Switch] ... │ ← Titlebar
-├─────────┬──────────────────────────────────────────┬─────┤
-│ PROFILES│  Profiles  │ Repo Mappings │ SSH Config │ ... │ ← Tabs
-│         ├────────────────────────────────────────────────┤
-│ ● Prof1 │                                                │
-│ ○ Prof2 │          Profile Detail / Tab Content          │ ← Main
-│         │                                                │
-├─────────┴────────────────────────────────────────────────┤
-│ Activity Log                                             │ ← Bottom
-│ Git: username <email>                                    │
-└──────────────────────────────────────────────────────────┘
+### System Requirements
+
+- Windows 10/11 (or macOS, Linux)
+- OpenSSH installed (built into Windows 10+)
+- Git installed
+
+### Download and Install
+
+Download the installer from [GitHub Releases](https://github.com/khanhnd157/mazessh/releases):
+
+| OS                    | File                                                      |
+| --------------------- | --------------------------------------------------------- |
+| Windows               | `Maze.SSH_x64-setup.exe` or `Maze.SSH_x64_en-US.msi`     |
+| macOS Intel           | `Maze.SSH_x64.dmg`                                       |
+| macOS Apple Silicon   | `Maze.SSH_aarch64.dmg`                                   |
+| Linux (Debian/Ubuntu) | `Maze.SSH_amd64.deb`                                     |
+| Linux (Fedora/RHEL)   | `Maze.SSH-x86_64.rpm`                                    |
+| Linux (Universal)     | `Maze.SSH_amd64.AppImage`                                |
+
+### After Installation
+
+The application automatically:
+
+- Scans for existing SSH keys in `~/.ssh/`
+- Starts the Windows SSH Agent service if not running
+- Appears in the system tray
+
+---
+
+## Main Interface
+
+```text
++----------------------------------------------------------+
+| [Logo] Maze SSH | * Profile Name  Provider  [Switch] ... | <- Titlebar
++---------+----------------------------------------------+-+
+| PROFILES|  Profiles  | Repo Mappings | SSH Config | ...  | <- Tabs
+|         +------------------------------------------------+
+| * Prof1 |                                                |
+| o Prof2 |          Profile Detail / Tab Content          | <- Main
+|         |                                                |
++---------+------------------------------------------------+
+| Activity Log                                             | <- Bottom
+| Git: username <email>                                    |
++----------------------------------------------------------+
 ```
 
 ### Titlebar
 
-- **Trạng thái**: hiển thị profile đang active (chấm xanh nhấp nháy) hoặc "No active profile"
-- **Switch**: dropdown chọn nhanh profile
-- **Deactivate**: tắt profile hiện tại
-- **Lock**: khóa ứng dụng (khi đã cài PIN)
-- **Theme**: chuyển Dark/Light
-- **Window controls**: Minimize, Maximize, Close (ẩn xuống tray)
+- **Status**: displays the active profile (green pulsing dot) or "No active profile"
+- **Switch**: dropdown for quick profile switching
+- **Deactivate**: turns off the current profile
+- **Lock**: locks the application (when PIN is configured)
+- **Theme**: toggles Dark/Light mode
+- **Window controls**: Minimize, Maximize, Close (hides to tray)
 
 ### Sidebar
 
-Danh sách tất cả profiles. Click vào profile để xem chi tiết. Nút **+ New** để tạo profile mới.
+Lists all profiles. Click a profile to view its details. The **+ New** button creates a new profile.
 
 ### Tabs
 
-- **Profiles**: xem và quản lý profile chi tiết
-- **Repo Mappings**: gán repository cho profile
-- **SSH Config**: xem, ghi, rollback SSH config
-- **Settings**: bảo mật, PIN, timeout
+- **Profiles**: view and manage profile details
+- **Repo Mappings**: assign repositories to profiles
+- **SSH Config**: view, write, and rollback SSH config
+- **Settings**: security, PIN, timeouts
 
 ### Bottom Bar
 
-- **Activity Log**: lịch sử thao tác (switch, test, lock...)
-- **Git identity**: hiển thị `user.name <user.email>` hiện tại
+- **Activity Log**: history of operations (switch, test, lock...)
+- **Git identity**: displays the current `user.name <user.email>`
 
 ---
 
-## Quản lý Profile
+## Managing Profiles
 
-### Tạo profile mới
+### Creating a new profile
 
-1. Click **+ New** ở sidebar
-2. Điền thông tin:
-   - **Profile Name**: tên hiển thị (ví dụ: "Work GitHub")
-   - **Provider**: chọn GitHub, GitLab, Gitea, hoặc Bitbucket
-   - **Email**: email liên kết với tài khoản Git
-   - **Git Username**: username Git (hiển thị trong commits)
-   - **SSH Private Key**: đường dẫn đến private key
-     - Ứng dụng tự quét `~/.ssh/` và hiển thị các key tìm thấy
-     - Click vào key để chọn nhanh
-   - **Host Alias**: tên alias cho SSH config (tự tạo từ Profile Name)
-   - **Hostname**: địa chỉ server (tự điền theo Provider)
+1. Click **+ New** in the sidebar
+2. Fill in the details:
+   - **Profile Name**: display name (e.g., "Work GitHub")
+   - **Provider**: select GitHub, GitLab, Gitea, or Bitbucket
+   - **Email**: email associated with the Git account
+   - **Git Username**: Git username (shown in commits)
+   - **SSH Private Key**: path to the private key
+     - The app automatically scans `~/.ssh/` and lists detected keys
+     - Click a key to select it quickly
+   - **Host Alias**: alias name for SSH config (auto-generated from Profile Name)
+   - **Hostname**: server address (auto-filled based on Provider)
 3. Click **Create Profile**
 
-### Chỉnh sửa profile
+### Editing a profile
 
-1. Chọn profile ở sidebar
-2. Click **Edit** trong trang chi tiết
-3. Sửa thông tin → **Save Changes**
+1. Select the profile in the sidebar
+2. Click **Edit** in the detail view
+3. Modify the information and click **Save Changes**
 
-### Xóa profile
+### Deleting a profile
 
-1. Chọn profile ở sidebar
+1. Select the profile in the sidebar
 2. Click **Delete**
-3. Xác nhận trong dialog → profile và repo mappings liên quan sẽ bị xóa
+3. Confirm in the dialog. The profile and all associated repo mappings will be removed.
 
-### Xem thông tin chi tiết
+### Viewing profile details
 
-Trang profile detail hiển thị:
+The profile detail page displays:
 
-- **Host Alias** và **Hostname**: thông tin kết nối SSH
-- **SSH User** và **Port**: mặc định `git` và `22`
-- **Git Username** và **Key Type**: thông tin identity
-- **SSH Private Key**: đường dẫn key (hover để copy)
-- **Key Fingerprint**: SHA256 hash và loại key (ED25519, RSA...)
-- **Mapped Repositories**: danh sách repo đã gán cho profile này
+- **Host Alias** and **Hostname**: SSH connection info
+- **SSH User** and **Port**: defaults to `git` and `22`
+- **Git Username** and **Key Type**: identity information
+- **SSH Private Key**: key path (hover to copy)
+- **Key Fingerprint**: SHA256 hash and key type (ED25519, RSA...)
+- **Mapped Repositories**: list of repos assigned to this profile
 
-### Test kết nối
+### Testing the connection
 
-Click **Test Connection** để kiểm tra SSH key có kết nối được đến server không:
+Click **Test Connection** to verify that the SSH key can connect to the server:
 
-- **Thành công**: hiện thông báo xanh với username đã xác thực
-- **Thất bại**: hiện thông báo đỏ với chi tiết lỗi
+- **Success**: green message with the authenticated username
+- **Failure**: red message with error details
 
 ### Export / Import
 
-Trong tab **Settings**:
+In the **Settings** tab:
 
-- **Export to Clipboard**: copy tất cả profiles dạng JSON (không bao gồm passphrase)
-- **Import from Clipboard**: paste JSON để import profiles mới (bỏ qua trùng tên)
+- **Export to Clipboard**: copies all profiles as JSON (does not include passphrases)
+- **Import from Clipboard**: paste JSON to import new profiles (skips duplicates by name)
 
 ---
 
-## Chuyển đổi Profile
+## Switching Profiles
 
-### Cách 1: Switch từ Titlebar (nhanh nhất)
+### Method 1: Switch from Titlebar (fastest)
 
-1. Click **Switch** trên titlebar
-2. Chọn profile từ dropdown
-3. Ứng dụng tự động: load key → set env → sync git identity
+1. Click **Switch** on the titlebar
+2. Select a profile from the dropdown
+3. The app automatically: loads key, sets env, syncs git identity
 
-### Cách 2: Activate từ Profile Detail
+### Method 2: Activate from Profile Detail
 
-1. Chọn profile ở sidebar
+1. Select a profile in the sidebar
 2. Click **Activate**
 
-### Cách 3: Phím tắt
+### Method 3: Keyboard shortcut
 
-Dùng **Ctrl+L** để lock, **Ctrl+1-4** để chuyển tab.
+Use **Ctrl+L** to lock, **Ctrl+1-4** to switch tabs.
 
-### Khi switch profile thì sao?
+### What happens after switching?
 
-- **Terminal mới**: tự động dùng đúng key (qua biến môi trường `GIT_SSH_COMMAND`)
-- **Terminal đang mở**: cần chạy `source ~/.maze-ssh/env` hoặc mở terminal mới
-- **ssh-add -l**: sẽ hiển thị đúng key đang active
-- **git push/pull**: sẽ dùng đúng identity
+- **New terminals**: automatically use the correct key (via `GIT_SSH_COMMAND` environment variable)
+- **Currently open terminals**: run `source ~/.maze-ssh/env` or open a new terminal
+- **ssh-add -l**: shows the currently active key
+- **git push/pull**: uses the correct identity
 
 ### Deactivate
 
-Click **Deactivate** trên titlebar hoặc dùng CLI `maze-ssh-cli off`:
+Click **Deactivate** on the titlebar or use the CLI `maze-ssh-cli off`:
 
-- Xóa key khỏi SSH agent
-- Xóa biến môi trường `GIT_SSH_COMMAND`
-- Không ảnh hưởng đến SSH keys trên đĩa
+- Removes the key from the SSH agent
+- Clears the `GIT_SSH_COMMAND` environment variable
+- Does not affect SSH keys on disk
 
 ---
 
 ## Repo Mapping
 
-Tự động chuyển profile dựa trên thư mục repository.
+Automatically switch profiles based on the repository directory.
 
-### Tạo mapping
+### Creating a mapping
 
-1. Chuyển sang tab **Repo Mappings**
+1. Switch to the **Repo Mappings** tab
 2. Click **Add Mapping**
-3. Nhập đường dẫn repository (ứng dụng tự xác nhận có phải git repo không)
-4. Chọn profile
-5. Chọn scope:
-   - **Local**: chỉ set `git config` cho repo này (khuyến nghị)
-   - **Global**: set `git config --global`
+3. Enter the repository path (the app validates whether it is a git repo)
+4. Select a profile
+5. Choose the scope:
+   - **Local**: sets `git config` for this repo only (recommended)
+   - **Global**: sets `git config --global`
 6. Click **Create Mapping**
 
-### Cài đặt Git Hook
+### Installing a Git Hook
 
-Trên mỗi mapping card, hover sẽ thấy icon **Git Branch**. Click để cài pre-push hook:
+On each mapping card, hover to reveal the **Git Branch** icon. Click to install a pre-push hook:
 
-- Hook kiểm tra `git config user.email` trước mỗi `git push`
-- Nếu email không khớp với profile → chặn push và hiển thị cảnh báo
-- Chỉ xóa hook nếu do Maze SSH tạo
+- The hook checks `git config user.email` before each `git push`
+- If the email does not match the profile, the push is blocked with a warning
+- Only removes hooks created by Maze SSH
 
-### Xóa mapping
+### Removing a mapping
 
-Hover vào mapping card → click icon **Trash** → xác nhận.
+Hover over the mapping card, click the **Trash** icon, and confirm.
 
 ---
 
 ## SSH Config
 
-Tab **SSH Config** quản lý file `~/.ssh/config`.
+The **SSH Config** tab manages the `~/.ssh/config` file.
 
 ### Preview
 
-Xem SSH config sẽ được tạo từ tất cả profiles:
+View the SSH config that will be generated from all profiles:
 
-```
+```text
 # === BEGIN MAZE-SSH MANAGED ===
 Host github-work
   HostName github.com
@@ -246,153 +246,153 @@ Host github-work
 
 ### Write Config
 
-Click **Write Config** để ghi vào `~/.ssh/config`:
+Click **Write Config** to write to `~/.ssh/config`:
 
-- Tự động tạo backup trước khi ghi
-- Chỉ thay đổi phần giữa markers `BEGIN/END MAZE-SSH MANAGED`
-- Nội dung bạn tự viết ngoài markers được giữ nguyên
+- Automatically creates a backup before writing
+- Only modifies the section between `BEGIN/END MAZE-SSH MANAGED` markers
+- Your manually written content outside the markers is preserved
 
 ### Current
 
-Xem nội dung hiện tại của `~/.ssh/config`.
+View the current contents of `~/.ssh/config`.
 
 ### Backups
 
-Xem danh sách các bản backup với thời gian và kích thước. Click **Rollback** để khôi phục bản backup bất kỳ (bản hiện tại sẽ được backup trước khi rollback).
+View the list of backups with timestamps and sizes. Click **Rollback** to restore any backup (the current config is backed up before rolling back).
 
 ---
 
-## Bảo mật
+## Security
 
-### Thiết lập PIN
+### Setting up a PIN
 
-1. Chuyển sang tab **Settings**
-2. Trong phần **PIN Protection**, click **Set PIN**
-3. Nhập PIN (tối thiểu 4 ký tự) và xác nhận
-4. PIN được hash bằng Argon2 và lưu trong Windows Credential Manager
+1. Switch to the **Settings** tab
+2. Under **PIN Protection**, click **Set PIN**
+3. Enter a PIN (minimum 4 characters) and confirm
+4. The PIN is hashed with Argon2 and stored in Windows Credential Manager
 
-### Khóa ứng dụng
+### Locking the application
 
-- **Thủ công**: click icon **Lock** trên titlebar hoặc nhấn **Ctrl+L**
-- **Tự động**: cấu hình timeout trong Settings (5, 15, 30, hoặc 60 phút không thao tác)
-- **Khi minimize**: bật "Lock when minimized to tray" trong Settings
+- **Manual**: click the **Lock** icon on the titlebar or press **Ctrl+L**
+- **Automatic**: configure a timeout in Settings (5, 15, 30, or 60 minutes of inactivity)
+- **On minimize**: enable "Lock when minimized to tray" in Settings
 
-Khi khóa:
+When locked:
 
-- Màn hình lock che toàn bộ giao diện
-- SSH agent keys được xóa
-- Tất cả thao tác bị chặn cho đến khi nhập đúng PIN
+- The lock screen covers the entire interface
+- SSH agent keys are cleared
+- All operations are blocked until the correct PIN is entered
 
-### Giới hạn nhập sai PIN
+### Failed PIN attempt limit
 
-- Tối đa 5 lần nhập sai liên tiếp
-- Sau 5 lần sai → chờ 60 giây trước khi thử lại
+- Maximum of 5 consecutive failed attempts
+- After 5 failures, wait 60 seconds before trying again
 
 ### Agent Key Timeout
 
-Cấu hình trong Settings → **Agent Key Timeout**:
+Configure in Settings under **Agent Key Timeout**:
 
-- Sau thời gian cấu hình, SSH keys tự động bị xóa khỏi agent
-- Độc lập với việc khóa ứng dụng
-- Profile tự động deactivate khi keys hết hạn
+- After the configured time, SSH keys are automatically removed from the agent
+- Independent of the application lock
+- The profile is automatically deactivated when keys expire
 
-### Đổi / Xóa PIN
+### Changing / Removing PIN
 
-Trong Settings → **PIN Protection**:
+In Settings under **PIN Protection**:
 
-- **Change PIN**: nhập PIN cũ + PIN mới
-- **Remove PIN**: nhập PIN để xác nhận → tắt tính năng khóa
+- **Change PIN**: enter old PIN + new PIN
+- **Remove PIN**: enter PIN to confirm, disables the lock feature
 
 ### Audit Log
 
-Tất cả thao tác bảo mật được ghi vào `~/.maze-ssh/audit.log`:
+All security-related operations are logged to `~/.maze-ssh/audit.log`:
 
-- Lock / Unlock (thành công và thất bại)
-- Thay đổi PIN
-- Thay đổi settings
-- Agent keys hết hạn
+- Lock / Unlock (successful and failed)
+- PIN changes
+- Settings changes
+- Agent key expirations
 
-Xem trong Settings → **Audit Log** → **View Log**.
-
----
-
-## Phím tắt
-
-| Phím | Chức năng |
-| ---- | --------- |
-| **Ctrl+1** | Chuyển tab Profiles |
-| **Ctrl+2** | Chuyển tab Repo Mappings |
-| **Ctrl+3** | Chuyển tab SSH Config |
-| **Ctrl+4** | Chuyển tab Settings |
-| **Ctrl+L** | Khóa ứng dụng |
-| **Escape** | Đóng dialog / dropdown |
+View in Settings, **Audit Log** section, click **View Log**.
 
 ---
 
-## Xử lý sự cố
+## Keyboard Shortcuts
 
-### "ssh-add -l" không hiển thị key sau khi switch
+| Shortcut   | Action                    |
+| ---------- | ------------------------- |
+| **Ctrl+1** | Switch to Profiles tab    |
+| **Ctrl+2** | Switch to Repo Mappings   |
+| **Ctrl+3** | Switch to SSH Config tab  |
+| **Ctrl+4** | Switch to Settings tab    |
+| **Ctrl+L** | Lock the application      |
+| **Escape** | Close dialog / dropdown   |
 
-Terminal hiện tại cần được refresh. Mở terminal mới hoặc chạy:
+---
+
+## Troubleshooting
+
+### "ssh-add -l" does not show the key after switching
+
+The current terminal needs to be refreshed. Open a new terminal or run:
 
 ```bash
 source ~/.maze-ssh/env
 ```
 
-### SSH Agent service không khởi động
+### SSH Agent service fails to start
 
-Mở PowerShell với quyền Admin và chạy:
+Open PowerShell as Administrator and run:
 
 ```powershell
 Set-Service ssh-agent -StartupType Manual
 Start-Service ssh-agent
 ```
 
-### Push sai tài khoản
+### Pushing with the wrong account
 
-1. Kiểm tra profile đang active: xem titlebar hoặc chạy `maze-ssh-cli current`
-2. Switch sang profile đúng
-3. Kiểm tra git identity: `git config user.email`
-4. Cài git hook để ngăn chặn: tab Repo Mappings → hover mapping → click icon Git Branch
+1. Check the active profile: look at the titlebar or run `maze-ssh-cli current`
+2. Switch to the correct profile
+3. Verify git identity: `git config user.email`
+4. Install a git hook to prevent future mistakes: Repo Mappings tab, hover a mapping, click the Git Branch icon
 
-### SSH config bị hỏng sau khi ghi
+### SSH config corrupted after writing
 
-1. Tab SSH Config → **Backups**
-2. Chọn bản backup gần nhất → **Rollback**
-3. Nội dung bên ngoài markers `MAZE-SSH MANAGED` luôn được bảo toàn
+1. Go to SSH Config tab and click **Backups**
+2. Select the most recent backup and click **Rollback**
+3. Content outside the `MAZE-SSH MANAGED` markers is always preserved
 
-### Ứng dụng bị khóa và quên PIN
+### Application is locked and PIN is forgotten
 
-PIN được lưu trong Windows Credential Manager. Để reset:
+The PIN is stored in Windows Credential Manager. To reset:
 
-1. Mở **Credential Manager** trong Windows (Control Panel → Credential Manager)
-2. Chọn tab **Windows Credentials**
-3. Tìm entry `maze-ssh / pin-hash`
-4. Xóa entry đó
-5. Khởi động lại ứng dụng — PIN sẽ được reset
+1. Open **Credential Manager** in Windows (Control Panel, then Credential Manager)
+2. Select the **Windows Credentials** tab
+3. Find the entry `maze-ssh / pin-hash`
+4. Delete that entry
+5. Restart the application. The PIN will be reset.
 
-### System tray không hiển thị
+### System tray icon is not visible
 
-Ứng dụng minimize xuống tray khi đóng cửa sổ. Click icon Maze SSH trong system tray để mở lại. Nếu không thấy icon, kiểm tra khay ẩn (hidden icons) trên taskbar.
+The application minimizes to the tray when the window is closed. Click the Maze SSH icon in the system tray to reopen it. If the icon is not visible, check the hidden icons area on the taskbar.
 
 ---
 
-## Dữ liệu
+## Data Storage
 
-Tất cả dữ liệu lưu tại `~/.maze-ssh/`:
+All data is stored at `~/.maze-ssh/`:
 
-| File | Nội dung |
-| ---- | -------- |
-| `profiles.json` | Thông tin profiles (không chứa private key, chỉ đường dẫn) |
-| `active.txt` | ID profile đang active |
-| `repo_mappings.json` | Mapping repo → profile |
-| `settings.json` | Cài đặt bảo mật (timeout, lock-on-minimize) |
-| `env` | File env cho shell sourcing |
-| `audit.log` | Nhật ký bảo mật |
+| File                 | Contents                                                            |
+| -------------------- | ------------------------------------------------------------------- |
+| `profiles.json`      | Profile information (does not contain private keys, only paths)     |
+| `active.txt`         | ID of the currently active profile                                  |
+| `repo_mappings.json` | Repository to profile mappings                                      |
+| `settings.json`      | Security settings (timeouts, lock-on-minimize)                      |
+| `env`                | Shell-sourceable env file                                           |
+| `audit.log`          | Security audit trail                                                |
 
-### Bảo mật dữ liệu
+### Data Security
 
-- **Private keys**: KHÔNG được lưu trong ứng dụng, chỉ lưu đường dẫn
-- **Passphrases**: lưu trong Windows Credential Manager (mã hóa bởi OS)
-- **PIN**: hash Argon2, lưu trong Windows Credential Manager
-- **Profiles**: JSON plaintext — chỉ chứa metadata, không có secrets
+- **Private keys**: NOT stored in the application, only file paths are saved
+- **Passphrases**: stored in Windows Credential Manager (encrypted by the OS)
+- **PIN**: Argon2 hash, stored in Windows Credential Manager
+- **Profiles**: plaintext JSON containing only metadata, no secrets
