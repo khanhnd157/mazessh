@@ -1,4 +1,4 @@
-import { Plus, ScanSearch } from "lucide-react";
+import { Plus, KeyRound } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
 import { ProfileCard } from "./ProfileCard";
 import { useState } from "react";
@@ -10,39 +10,39 @@ export function ProfileList() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 h-10 shrink-0 border-b">
-        <h2 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+      <div className="flex items-center justify-between px-3 h-10 shrink-0 border-b">
+        <h2 className="text-[10.5px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
           Profiles
           {profiles.length > 0 && (
-            <span className="ml-1.5 text-muted-foreground/50">{profiles.length}</span>
+            <span className="ml-1 opacity-50">{profiles.length}</span>
           )}
         </h2>
         <button
           type="button"
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md bg-primary/15 text-primary hover:bg-primary/25 font-medium transition-colors"
+          title="New profile"
+          className="flex items-center gap-1 px-1.5 py-0.5 text-[10.5px] rounded-md bg-primary/12 text-primary hover:bg-primary/20 font-medium transition-colors"
         >
-          <Plus size={12} />
+          <Plus size={11} />
           New
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+      <div className="flex-1 overflow-y-auto p-1.5 space-y-px">
         {loading && profiles.length === 0 && (
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
-            <ScanSearch size={16} className="animate-spin mr-2" />
-            <span className="text-sm">Loading...</span>
+          <div className="flex items-center justify-center py-10 text-muted-foreground/50">
+            <span className="text-xs">Loading...</span>
           </div>
         )}
         {!loading && profiles.length === 0 && (
-          <div className="text-center py-8">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-              <Plus size={18} className="text-primary" />
+          <div className="text-center py-10 px-4">
+            <div className="w-9 h-9 rounded-xl bg-primary/8 flex items-center justify-center mx-auto mb-2.5">
+              <KeyRound size={16} className="text-primary/40" />
             </div>
-            <p className="text-sm text-muted-foreground">No profiles yet</p>
+            <p className="text-xs text-muted-foreground/60">No profiles yet</p>
             <button
               type="button"
               onClick={() => setShowForm(true)}
-              className="mt-2 text-xs text-primary hover:underline"
+              className="mt-1.5 text-[11px] text-primary hover:underline"
             >
               Create your first profile
             </button>
