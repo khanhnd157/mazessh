@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Minus, Square, X, Copy, Moon, Sun, Circle,
-  ArrowLeftRight, Power, Check, Lock,
+  ArrowLeftRight, Power, Check, Lock, Loader2,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
@@ -147,6 +147,7 @@ export function TitleBar() {
 /* ── Inline Switch Dropdown (compact for titlebar) ── */
 function SwitchDropdown() {
   const [open, setOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { activateProfile, activeProfile } = useAppStore();
   const { profiles, fetchProfiles } = useProfileStore();
@@ -163,6 +164,7 @@ function SwitchDropdown() {
   const handleSwitch = useCallback(
     async (p: ProfileSummary) => {
       setOpen(false);
+      setSwitching(true);
       try {
         const result = await activateProfile(p.id);
         await fetchProfiles();
@@ -170,6 +172,8 @@ function SwitchDropdown() {
         toast.success(`Switched to ${result.profile_name}`);
       } catch (err) {
         toast.error("Switch failed", { description: String(err) });
+      } finally {
+        setSwitching(false);
       }
     },
     [activateProfile, fetchProfiles, addLog],
@@ -186,8 +190,8 @@ function SwitchDropdown() {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
       >
-        <ArrowLeftRight size={11} />
-        Switch
+        {switching ? <Loader2 size={11} className="animate-spin" /> : <ArrowLeftRight size={11} />}
+        {switching ? "Switching..." : "Switch"}
       </button>
       {open && (
         <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-60 rounded-lg border bg-popover shadow-xl shadow-black/20 z-50 overflow-hidden">
