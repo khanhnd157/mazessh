@@ -8,6 +8,7 @@ import { useLogStore } from "@/stores/logStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { useSecurityStore } from "@/stores/securityStore";
 import { useInactivityTracker } from "@/hooks/useInactivityTracker";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MainPanel } from "@/components/layout/MainPanel";
@@ -28,6 +29,7 @@ function App() {
   const didInit = useRef(false);
 
   useInactivityTracker();
+  useKeyboardShortcuts({ setActiveTab });
 
   // One-time initialization
   useEffect(() => {
