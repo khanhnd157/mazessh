@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import { commands } from "@/lib/tauri-commands";
 
-const DEBOUNCE_MS = 30_000; // Report activity at most once per 30 seconds
+const DEBOUNCE_MS = 30_000;
 
 export function useInactivityTracker() {
   const lastReportedRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const report = () => {
@@ -15,11 +16,22 @@ export function useInactivityTracker() {
       }
     };
 
-    const events = ["mousemove", "keydown", "mousedown", "scroll"];
-    events.forEach((e) => document.addEventListener(e, report, { passive: true }));
+    // Throttled handler — only schedule one report per debounce window
+    const handler = () => {
+      if (timerRef.current) return;
+      report();
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+      }, DEBOUNCE_MS);
+    };
+
+    document.addEventListener("mousemove", handler, { passive: true });
+    document.addEventListener("keydown", handler, { passive: true });
 
     return () => {
-      events.forEach((e) => document.removeEventListener(e, report));
+      document.removeEventListener("mousemove", handler);
+      document.removeEventListener("keydown", handler);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 }
