@@ -107,31 +107,37 @@ This means after switching:
 ```text
 maze-ssh/
 ├── src/                          # React frontend
-│   ├── components/               # UI components
+│   ├── components/
 │   │   ├── layout/               # TitleBar, Sidebar, MainPanel, BottomBar
 │   │   ├── profiles/             # ProfileList, ProfileCard, ProfileDetail, ProfileForm
 │   │   ├── switch/               # QuickSwitch, ActiveBadge
-│   │   ├── ssh-config/           # ConfigPreview
+│   │   ├── repos/                # RepoMappingList, RepoMappingCard, AddRepoMappingDialog
+│   │   ├── security/             # LockScreen
+│   │   ├── settings/             # SecuritySettings, AuditLogViewer
+│   │   ├── ssh-config/           # ConfigPreview (with rollback + backups)
 │   │   └── logs/                 # ActivityLog
-│   ├── stores/                   # Zustand stores (profile, app, log, theme)
-│   ├── lib/                      # Tauri command wrappers
+│   ├── stores/                   # Zustand (profile, app, log, theme, security, repoMapping)
+│   ├── hooks/                    # useInactivityTracker
+│   ├── lib/                      # Tauri command wrappers (40+ commands)
 │   └── types/                    # TypeScript type definitions
 │
 ├── src-tauri/                    # Rust backend
 │   └── src/
-│       ├── commands/             # 15 Tauri commands
-│       ├── models/               # SshProfile, RepoMapping, LogEntry
-│       └── services/             # profile_service, ssh_engine, config_engine,
-│                                 # key_scanner, security
+│       ├── commands/             # 40+ Tauri commands (profiles, switch, security,
+│       │                         # repos, git identity, hooks, advanced)
+│       ├── models/               # SshProfile, RepoMapping, SecuritySettings, AuditEntry
+│       └── services/             # profile, ssh_engine, config_engine, key_scanner,
+│                                 # security, lock, session, audit, settings,
+│                                 # repo_mapping, repo_detection, git_identity
 ```
 
 ## Roadmap
 
 - [x] **M1 — Core MVP**: Profile CRUD, quick switch, SSH agent integration, config generator
-- [ ] **M2 — Automation**: Per-repo auto-mapping, git identity sync (`user.name`/`user.email`)
-- [ ] **M3 — Security**: Secure vault, auto-lock, biometric unlock
-- [ ] **M4 — Advanced**: Virtual SSH agent, git hooks integration
-- [ ] **M5 — Ecosystem**: CLI tool (`maze-ssh use work`), API integration, key generator
+- [x] **M2 — Automation**: Per-repo auto-mapping, git identity sync (`user.name`/`user.email`)
+- [x] **M3 — Security**: PIN lock, auto-lock on inactivity, agent key timeout, persistent audit log
+- [x] **M4 — Advanced**: Git hooks (pre-push identity validation), SSH config rollback, profile export/import, key fingerprints
+- [ ] **M5 — Ecosystem**: CLI tool (`maze-ssh use work`), API integration (GitHub/GitLab key upload), SSH key generator
 
 ## License
 
