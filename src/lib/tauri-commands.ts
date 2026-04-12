@@ -2,12 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ActivationResult,
   AuditEntry,
+  ConfigBackup,
   ConnectionTestResult,
   CreateProfileInput,
   CreateRepoMappingInput,
   DetectedKey,
   GitConfigScope,
   GitIdentityInfo,
+  KeyFingerprint,
   LockStateResponse,
   ProfileSummary,
   RepoMapping,
@@ -90,4 +92,22 @@ export const commands = {
     invoke<AuditEntry[]>("get_audit_logs", { limit, offset, actionFilter: actionFilter ?? null }),
   getAgentTimeRemaining: () => invoke<number | null>("get_agent_time_remaining"),
   touchActivity: () => invoke<void>("touch_activity"),
+
+  // SSH Config (M4)
+  listConfigBackups: () => invoke<ConfigBackup[]>("list_config_backups"),
+  rollbackSshConfig: (backupPath: string) =>
+    invoke<void>("rollback_ssh_config", { backupPath }),
+  readCurrentSshConfig: () => invoke<string>("read_current_ssh_config"),
+
+  // Hooks
+  generateGitHook: (repoPath: string) =>
+    invoke<string>("generate_git_hook", { repoPath }),
+  removeGitHook: (repoPath: string) =>
+    invoke<void>("remove_git_hook", { repoPath }),
+
+  // Advanced
+  exportProfiles: () => invoke<string>("export_profiles"),
+  importProfiles: (json: string) => invoke<number>("import_profiles", { json }),
+  getKeyFingerprint: (id: string) =>
+    invoke<KeyFingerprint>("get_key_fingerprint", { id }),
 };

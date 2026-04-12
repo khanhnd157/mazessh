@@ -138,6 +138,9 @@ pub fn run() {
             commands::ssh_config::preview_ssh_config,
             commands::ssh_config::write_ssh_config,
             commands::ssh_config::backup_ssh_config,
+            commands::ssh_config::list_config_backups,
+            commands::ssh_config::rollback_ssh_config,
+            commands::ssh_config::read_current_ssh_config,
             // Git
             commands::git::get_git_ssh_command,
             commands::git::test_ssh_connection,
@@ -167,6 +170,13 @@ pub fn run() {
             commands::security::get_audit_logs,
             commands::security::get_agent_time_remaining,
             commands::security::touch_activity,
+            // Hooks
+            commands::hooks::generate_git_hook,
+            commands::hooks::remove_git_hook,
+            // Advanced
+            commands::advanced::export_profiles,
+            commands::advanced::import_profiles,
+            commands::advanced::get_key_fingerprint,
             // Tray
             update_tray_tooltip,
         ])

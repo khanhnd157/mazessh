@@ -1,5 +1,7 @@
+pub mod advanced;
 pub mod git;
 pub mod git_identity;
+pub mod hooks;
 pub mod profiles;
 pub mod repo_detection;
 pub mod repo_mappings;
