@@ -127,6 +127,22 @@ export interface AuditEntry {
   result: string;
 }
 
+// ── M4: Advanced Types ──
+
+export interface ConfigBackup {
+  filename: string;
+  path: string;
+  size: number;
+  created_at: string;
+}
+
+export interface KeyFingerprint {
+  bits: string;
+  hash: string;
+  comment: string;
+  key_type: string;
+}
+
 // ── Helpers ──
 
 export function getProviderLabel(provider: Provider): string {

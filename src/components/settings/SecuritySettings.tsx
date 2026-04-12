@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
-import { Shield, Lock, Clock, KeyRound, AlertCircle, Check } from "lucide-react";
+import { Shield, Lock, Clock, KeyRound, AlertCircle, Check, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { commands } from "@/lib/tauri-commands";
 import { useSecurityStore } from "@/stores/securityStore";
+import { useProfileStore } from "@/stores/profileStore";
 import type { SecuritySettings as SecuritySettingsType } from "@/types";
 import { AuditLogViewer } from "./AuditLogViewer";
 
@@ -289,7 +291,53 @@ export function SecuritySettingsPanel() {
         </div>
       </div>
 
-      {/* Section 4: Audit Log */}
+      {/* Section 4: Export / Import */}
+      <div className="rounded-xl border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Download size={14} className="text-muted-foreground" />
+          <span className="text-sm font-medium">Export / Import Profiles</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Export all profiles as JSON for backup or migration. Import merges profiles (skips duplicates by name).
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const json = await commands.exportProfiles();
+                await navigator.clipboard.writeText(json);
+                toast.success("Profiles copied to clipboard");
+              } catch (err) {
+                toast.error("Export failed", { description: String(err) });
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent"
+          >
+            <Download size={12} />
+            Export to Clipboard
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const json = await navigator.clipboard.readText();
+                const count = await commands.importProfiles(json);
+                useProfileStore.getState().fetchProfiles();
+                toast.success(`Imported ${count} profile(s)`);
+              } catch (err) {
+                toast.error("Import failed", { description: String(err) });
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent"
+          >
+            <Upload size={12} />
+            Import from Clipboard
+          </button>
+        </div>
+      </div>
+
+      {/* Section 5: Audit Log */}
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
