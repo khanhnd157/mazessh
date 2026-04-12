@@ -76,19 +76,22 @@ jobs:
             - **macOS**: `.dmg` (Intel or Apple Silicon)
             - **Linux**: `.deb`, `.AppImage`, or `.rpm`
 
-            ### CLI Tool
+            ### CLI Tool (`maze-ssh-cli`)
             - **Windows**: `maze-ssh-cli-windows-x64.exe`
             - **macOS Intel**: `maze-ssh-cli-macos-x64`
             - **macOS ARM**: `maze-ssh-cli-macos-aarch64`
             - **Linux**: `maze-ssh-cli-linux-x64`
 
-            ### What's New
-            See [CHANGELOG](https://github.com/khanhnd157/mazessh/blob/master/CHANGELOG.md) for details.
+            ### Documentation
+            - [User Guide](https://github.com/khanhnd157/mazessh/blob/master/docs/USER_GUIDE.md)
+            - [CLI Reference](https://github.com/khanhnd157/mazessh/blob/master/docs/CLI.md)
+            - [Changelog](https://github.com/khanhnd157/mazessh/blob/master/CHANGELOG.md)
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
 
   build-cli:
+    needs: build-desktop
     strategy:
       fail-fast: false
       matrix:
@@ -96,15 +99,19 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: maze-ssh-cli-windows-x64.exe
+            ext: .exe
           - platform: macos-latest
             target: x86_64-apple-darwin
             artifact: maze-ssh-cli-macos-x64
+            ext: ""
           - platform: macos-latest
             target: aarch64-apple-darwin
             artifact: maze-ssh-cli-macos-aarch64
+            ext: ""
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             artifact: maze-ssh-cli-linux-x64
+            ext: ""
 
     runs-on: ${{ matrix.platform }}
 
@@ -127,19 +134,14 @@ jobs:
         working-directory: src-tauri
         run: cargo build --bin maze-ssh-cli --no-default-features --release --target ${{ matrix.target }}
 
-      - name: Rename artifact (Unix)
-        if: matrix.platform != 'windows-latest'
-        run: |
-          cp src-tauri/target/${{ matrix.target }}/release/maze-ssh-cli ${{ matrix.artifact }}
-
-      - name: Rename artifact (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          cp src-tauri/target/${{ matrix.target }}/release/maze-ssh-cli.exe ${{ matrix.artifact }}
+      - name: Rename artifact
+        shell: bash
+        run: cp "src-tauri/target/${{ matrix.target }}/release/maze-ssh-cli${{ matrix.ext }}" "${{ matrix.artifact }}"
 
       - name: Upload CLI to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           draft: true
           files: ${{ matrix.artifact }}
         env:
