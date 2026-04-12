@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use tauri::{Emitter, State};
 
+use crate::commands::security::ensure_unlocked;
 use crate::commands::switch::ActivationResult;
 use crate::error::MazeSshError;
 use crate::models::repo_mapping::{GitConfigScope, RepoMappingSummary};
@@ -21,6 +22,7 @@ pub fn check_repo_mapping(
     path: String,
     state: State<'_, AppState>,
 ) -> Result<Option<RepoMappingSummary>, MazeSshError> {
+    ensure_unlocked(&state)?;
     let p = PathBuf::from(&path);
     let inner = state.inner.lock().unwrap();
 
@@ -57,6 +59,7 @@ pub async fn auto_switch_for_repo(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<Option<ActivationResult>, MazeSshError> {
+    ensure_unlocked(&state)?;
     let p = PathBuf::from(&path);
 
     // Extract everything we need from state
