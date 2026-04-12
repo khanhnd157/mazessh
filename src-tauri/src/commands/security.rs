@@ -64,13 +64,35 @@ pub fn setup_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSshE
     Ok(())
 }
 
+const MAX_PIN_ATTEMPTS: u32 = 5;
+const LOCKOUT_SECONDS: u64 = 60;
+
 #[tauri::command]
 pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeSshError> {
+    // Rate limiting: check if locked out from too many attempts
+    {
+        let security = state.security.lock().unwrap();
+        if security.failed_pin_attempts >= MAX_PIN_ATTEMPTS {
+            if let Some(last) = security.last_failed_attempt {
+                let elapsed = last.elapsed().as_secs();
+                if elapsed < LOCKOUT_SECONDS {
+                    let remaining = LOCKOUT_SECONDS - elapsed;
+                    return Err(MazeSshError::SecurityError(format!(
+                        "Too many failed attempts. Try again in {} seconds.",
+                        remaining
+                    )));
+                }
+            }
+        }
+    }
+
     let valid = lock_service::verify_pin(&pin)?;
     if valid {
         let mut security = state.security.lock().unwrap();
         security.is_locked = false;
         security.last_activity = std::time::Instant::now();
+        security.failed_pin_attempts = 0;
+        security.last_failed_attempt = None;
 
         audit_service::append_log(&AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -79,11 +101,16 @@ pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeS
             result: "success".to_string(),
         });
     } else {
+        let mut security = state.security.lock().unwrap();
+        security.failed_pin_attempts += 1;
+        security.last_failed_attempt = Some(std::time::Instant::now());
+
+        let attempts_left = MAX_PIN_ATTEMPTS.saturating_sub(security.failed_pin_attempts);
         audit_service::append_log(&AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             action: "unlock_failed".to_string(),
             profile_name: None,
-            result: "Invalid PIN".to_string(),
+            result: format!("Invalid PIN ({} attempts remaining)", attempts_left),
         });
     }
     Ok(valid)
