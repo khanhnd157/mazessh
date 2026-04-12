@@ -4,5 +4,6 @@ pub mod profiles;
 pub mod repo_detection;
 pub mod repo_mappings;
 pub mod scanner;
+pub mod security;
 pub mod ssh_config;
 pub mod switch;

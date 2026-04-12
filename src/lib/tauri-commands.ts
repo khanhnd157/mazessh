@@ -1,15 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ActivationResult,
+  AuditEntry,
   ConnectionTestResult,
   CreateProfileInput,
   CreateRepoMappingInput,
   DetectedKey,
   GitConfigScope,
   GitIdentityInfo,
+  LockStateResponse,
   ProfileSummary,
   RepoMapping,
   RepoMappingSummary,
+  SecuritySettings,
   SshProfile,
   UpdateProfileInput,
 } from "@/types";
@@ -71,4 +74,20 @@ export const commands = {
     invoke<RepoMappingSummary | null>("check_repo_mapping", { path }),
   autoSwitchForRepo: (path: string) =>
     invoke<ActivationResult | null>("auto_switch_for_repo", { path }),
+
+  // Security
+  setupPin: (pin: string) => invoke<void>("setup_pin", { pin }),
+  verifyPin: (pin: string) => invoke<boolean>("verify_pin", { pin }),
+  changePin: (oldPin: string, newPin: string) =>
+    invoke<void>("change_pin", { oldPin, newPin }),
+  removePin: (pin: string) => invoke<void>("remove_pin", { pin }),
+  lockApp: () => invoke<void>("lock_app"),
+  getLockState: () => invoke<LockStateResponse>("get_lock_state"),
+  getSecuritySettings: () => invoke<SecuritySettings>("get_security_settings"),
+  updateSecuritySettings: (settings: SecuritySettings) =>
+    invoke<void>("update_security_settings", { settings }),
+  getAuditLogs: (limit: number, offset: number, actionFilter?: string) =>
+    invoke<AuditEntry[]>("get_audit_logs", { limit, offset, actionFilter: actionFilter ?? null }),
+  getAgentTimeRemaining: () => invoke<number | null>("get_agent_time_remaining"),
+  touchActivity: () => invoke<void>("touch_activity"),
 };

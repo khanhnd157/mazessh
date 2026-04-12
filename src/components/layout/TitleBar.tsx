@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Minus, Square, X, Copy, Moon, Sun, Circle,
-  ArrowLeftRight, Power, Check,
+  ArrowLeftRight, Power, Check, Lock,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
 import { useThemeStore } from "@/stores/themeStore";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useSecurityStore } from "@/stores/securityStore";
 import { useLogStore } from "@/stores/logStore";
 import { getProviderLabel } from "@/types";
 import { ProviderIcon } from "@/components/profiles/ProviderIcon";
@@ -18,6 +19,7 @@ export function TitleBar() {
   const { theme, toggleTheme } = useThemeStore();
   const { activeProfile, deactivateProfile } = useAppStore();
   const { profiles, fetchProfiles } = useProfileStore();
+  const { pinIsSet, lockApp } = useSecurityStore();
   const { addLog } = useLogStore();
   const appWindow = getCurrentWindow();
 
@@ -90,6 +92,16 @@ export function TitleBar() {
 
       {/* Right: Theme + Window controls */}
       <div className="flex items-center h-full">
+        {pinIsSet && (
+          <button
+            type="button"
+            onClick={() => lockApp().catch(() => {})}
+            title="Lock app"
+            className="h-full w-10 flex items-center justify-center text-muted-foreground/60 hover:text-muted-foreground hover:bg-foreground/5 transition-colors"
+          >
+            <Lock size={13} />
+          </button>
+        )}
         <button
           type="button"
           onClick={toggleTheme}
