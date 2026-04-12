@@ -126,20 +126,20 @@ function App() {
               onClick={() => setActiveTab("settings")}
             />
           </div>
-          {/* Hide/show instead of unmount/remount — preserves state + avoids re-fetching */}
+          {/* All panels stay mounted; active panel fades in, others hidden */}
           <div className="flex-1 min-h-0 overflow-hidden relative">
-            <div className={activeTab === "profiles" ? "h-full" : "hidden"}>
+            <TabPanel active={activeTab === "profiles"}>
               <MainPanel />
-            </div>
-            <div className={activeTab === "repos" ? "h-full p-6 overflow-y-auto" : "hidden"}>
+            </TabPanel>
+            <TabPanel active={activeTab === "repos"} scrollable>
               <RepoMappingList />
-            </div>
-            <div className={activeTab === "config" ? "h-full p-6 overflow-y-auto" : "hidden"}>
+            </TabPanel>
+            <TabPanel active={activeTab === "config"} scrollable>
               <ConfigPreview />
-            </div>
-            <div className={activeTab === "settings" ? "h-full p-6 overflow-y-auto" : "hidden"}>
+            </TabPanel>
+            <TabPanel active={activeTab === "settings"} scrollable>
               <SecuritySettingsPanel />
-            </div>
+            </TabPanel>
           </div>
         </div>
       </div>
@@ -163,15 +163,41 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-        active
-          ? "border-b-2 border-primary text-foreground"
-          : "text-muted-foreground hover:text-foreground"
+      className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all duration-150 ${
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       }`}
     >
       {icon}
       {label}
+      {/* Animated underline indicator */}
+      <span
+        className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary transition-all duration-200 ease-out ${
+          active ? "opacity-100 scale-x-100" : "opacity-0 scale-x-0"
+        }`}
+      />
     </button>
+  );
+}
+
+function TabPanel({
+  active,
+  scrollable,
+  children,
+}: {
+  active: boolean;
+  scrollable?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`absolute inset-0 transition-opacity duration-150 ease-in-out ${
+        active
+          ? "opacity-100 z-10 pointer-events-auto"
+          : "opacity-0 z-0 pointer-events-none"
+      } ${scrollable ? "p-6 overflow-y-auto" : ""}`}
+    >
+      {children}
+    </div>
   );
 }
 
