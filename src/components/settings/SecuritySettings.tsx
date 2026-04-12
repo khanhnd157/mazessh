@@ -33,7 +33,8 @@ export function SecuritySettingsPanel() {
 
   useEffect(() => {
     fetchSettings();
-  }, [fetchSettings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUpdateSetting = async (partial: Partial<SecuritySettingsType>) => {
     if (!settings) return;

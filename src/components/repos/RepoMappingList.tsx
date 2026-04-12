@@ -5,12 +5,12 @@ import { RepoMappingCard } from "./RepoMappingCard";
 import { AddRepoMappingDialog } from "./AddRepoMappingDialog";
 
 export function RepoMappingList() {
-  const { mappings, loading, fetchMappings } = useRepoMappingStore();
+  const { mappings, loading } = useRepoMappingStore();
   const [showAdd, setShowAdd] = useState(false);
 
   useEffect(() => {
-    fetchMappings();
-  }, [fetchMappings]);
+    useRepoMappingStore.getState().fetchMappings();
+  }, []);
 
   return (
     <div className="space-y-4 max-w-3xl">

@@ -22,7 +22,6 @@ import { AddRepoMappingDialog } from "@/components/repos/AddRepoMappingDialog";
 import { toast } from "sonner";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
-import { useRepoMappingStore } from "@/stores/repoMappingStore";
 import { useLogStore } from "@/stores/logStore";
 import { commands } from "@/lib/tauri-commands";
 import type { ConnectionTestResult, KeyFingerprint, RepoMappingSummary, SshProfile } from "@/types";
@@ -44,7 +43,6 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [profileMappings, setProfileMappings] = useState<RepoMappingSummary[]>([]);
   const [fingerprint, setFingerprint] = useState<KeyFingerprint | null>(null);
-  const { fetchMappingsForProfile, deleteMapping } = useRepoMappingStore();
 
   // Reset state when switching profiles
   useEffect(() => {
@@ -52,9 +50,9 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     setShowEdit(false);
     setShowAddRepo(false);
     setFingerprint(null);
-    fetchMappingsForProfile(profile.id).then(setProfileMappings);
+    commands.getRepoMappingsForProfile(profile.id).then(setProfileMappings);
     commands.getKeyFingerprint(profile.id).then(setFingerprint).catch(() => {});
-  }, [profile.id, fetchMappingsForProfile]);
+  }, [profile.id]);
 
   const isActive = activeProfile?.id === profile.id;
 
@@ -300,7 +298,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
                 <button
                   type="button"
                   onClick={async () => {
-                    await deleteMapping(m.id);
+                    await commands.deleteRepoMapping(m.id);
                     setProfileMappings((prev) => prev.filter((p) => p.id !== m.id));
                     toast.success(`Removed ${m.repo_name}`);
                   }}
@@ -321,7 +319,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
           preselectedProfileId={profile.id}
           onClose={async () => {
             setShowAddRepo(false);
-            const updated = await fetchMappingsForProfile(profile.id);
+            const updated = await commands.getRepoMappingsForProfile(profile.id);
             setProfileMappings(updated);
           }}
         />
