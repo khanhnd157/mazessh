@@ -1,5 +1,6 @@
 import { Plus, KeyRound } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
+import { useUiStore } from "@/stores/uiStore";
 import { ProfileCard } from "./ProfileCard";
 import { useState } from "react";
 import { ProfileForm } from "./ProfileForm";
@@ -53,7 +54,10 @@ export function ProfileList() {
             key={profile.id}
             profile={profile}
             isSelected={selectedProfileId === profile.id}
-            onClick={() => selectProfile(profile.id)}
+            onClick={() => {
+              selectProfile(profile.id);
+              useUiStore.getState().setActiveTab("profiles");
+            }}
           />
         ))}
       </div>
