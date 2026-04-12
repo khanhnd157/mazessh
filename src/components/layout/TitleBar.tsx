@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Minus, Square, X, Copy, Moon, Sun, Circle,
   ArrowLeftRight, Power, Check, Lock, Loader2,
@@ -8,6 +9,7 @@ import { toast } from "sonner";
 import { useThemeStore } from "@/stores/themeStore";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
+import { useUiStore } from "@/stores/uiStore";
 import { useSecurityStore } from "@/stores/securityStore";
 import { useLogStore } from "@/stores/logStore";
 import { getProviderLabel } from "@/types";
@@ -149,13 +151,21 @@ function SwitchDropdown() {
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const { activateProfile, activeProfile } = useAppStore();
   const { profiles, fetchProfiles } = useProfileStore();
   const { addLog } = useLogStore();
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // Check both trigger button and portal dropdown
+      if (
+        ref.current && !ref.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -165,6 +175,11 @@ function SwitchDropdown() {
     async (p: ProfileSummary) => {
       setOpen(false);
       setSwitching(true);
+
+      // Select profile + switch to Profiles tab immediately
+      useProfileStore.getState().selectProfile(p.id);
+      useUiStore.getState().setActiveTab("profiles");
+
       try {
         const result = await activateProfile(p.id);
         await fetchProfiles();
@@ -183,9 +198,23 @@ function SwitchDropdown() {
     if (e.key === "Escape") setOpen(false);
   };
 
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: rect.bottom + 4,
+        left: rect.left + rect.width / 2 - 120, // 120 = half of w-60 (240px)
+      });
+    }
+  }, [open]);
+
   return (
-    <div className="relative" ref={ref} onKeyDown={handleKeyDown}>
+    <div ref={ref} onKeyDown={handleKeyDown}>
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
@@ -193,8 +222,12 @@ function SwitchDropdown() {
         {switching ? <Loader2 size={11} className="animate-spin" /> : <ArrowLeftRight size={11} />}
         {switching ? "Switching..." : "Switch"}
       </button>
-      {open && (
-        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-60 rounded-lg border bg-popover shadow-xl shadow-black/20 z-50 overflow-hidden">
+      {open && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{ top: dropdownPos.top, left: dropdownPos.left }}
+          className="fixed w-60 rounded-lg border bg-popover shadow-xl shadow-black/20 z-999 overflow-hidden animate-fade-in"
+        >
           <div className="px-3 py-1.5 border-b">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               Switch Identity
@@ -221,7 +254,8 @@ function SwitchDropdown() {
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
