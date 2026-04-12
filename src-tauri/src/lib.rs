@@ -1,19 +1,25 @@
+#[cfg(feature = "desktop")]
 mod commands;
-mod error;
-mod models;
-mod services;
-mod state;
+pub mod error;
+pub mod models;
+pub mod services;
+pub mod state;
 
+#[cfg(feature = "desktop")]
 use std::time::Duration;
 
+#[cfg(feature = "desktop")]
 use services::{lock_service, profile_service, repo_mapping_service, session_service, settings_service};
+#[cfg(feature = "desktop")]
 use state::AppState;
+#[cfg(feature = "desktop")]
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::TrayIconBuilder,
     Manager, WindowEvent,
 };
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn update_tray_tooltip(app: tauri::AppHandle, tooltip: String) {
     if let Some(tray) = app.tray_by_id("main-tray") {
@@ -21,6 +27,7 @@ fn update_tray_tooltip(app: tauri::AppHandle, tooltip: String) {
     }
 }
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load persisted data

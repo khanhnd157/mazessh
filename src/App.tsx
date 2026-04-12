@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "sonner";
 import { KeyRound, FileCode2, FolderGit2, Settings } from "lucide-react";
@@ -7,7 +7,9 @@ import { useAppStore } from "@/stores/appStore";
 import { useLogStore } from "@/stores/logStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { useSecurityStore } from "@/stores/securityStore";
+import { useUiStore } from "@/stores/uiStore";
 import { useInactivityTracker } from "@/hooks/useInactivityTracker";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MainPanel } from "@/components/layout/MainPanel";
@@ -18,16 +20,16 @@ import { LockScreen } from "@/components/security/LockScreen";
 import { SecuritySettingsPanel } from "@/components/settings/SecuritySettings";
 import type { AgentStatusEvent } from "@/types";
 
-type Tab = "profiles" | "config" | "repos" | "settings";
-
 function App() {
   const theme = useThemeStore((s) => s.theme);
   const isLocked = useSecurityStore((s) => s.isLocked);
   const initialized = useSecurityStore((s) => s.initialized);
-  const [activeTab, setActiveTab] = useState<Tab>("profiles");
+  const activeTab = useUiStore((s) => s.activeTab);
+  const setActiveTab = useUiStore((s) => s.setActiveTab);
   const didInit = useRef(false);
 
   useInactivityTracker();
+  useKeyboardShortcuts();
 
   // One-time initialization
   useEffect(() => {

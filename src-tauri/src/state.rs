@@ -22,6 +22,8 @@ pub struct SecurityState {
     pub last_activity: Instant,
     pub agent_activated_at: Option<Instant>,
     pub settings: SecuritySettings,
+    pub failed_pin_attempts: u32,
+    pub last_failed_attempt: Option<Instant>,
 }
 
 impl AppState {
@@ -39,6 +41,8 @@ impl AppState {
                 last_activity: Instant::now(),
                 agent_activated_at: None,
                 settings: SecuritySettings::default(),
+                failed_pin_attempts: 0,
+                last_failed_attempt: None,
             }),
         }
     }
@@ -62,6 +66,8 @@ impl AppState {
                 last_activity: Instant::now(),
                 agent_activated_at: None,
                 settings,
+                failed_pin_attempts: 0,
+                last_failed_attempt: None,
             }),
         }
     }

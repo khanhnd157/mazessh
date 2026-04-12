@@ -81,6 +81,14 @@ pub async fn test_ssh_connection(
     let mut cmd = tokio::process::Command::new(&ssh_bin);
     cmd.args(&args);
 
+    // Hide console window on Windows
+    #[cfg(windows)]
+    {
+        #[allow(unused_imports)]
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
     let output = cmd
         .output()
         .await
