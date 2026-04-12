@@ -2,6 +2,26 @@
 
 All notable changes to Maze SSH are documented in this file.
 
+## [1.0.1] - 2026-04-12
+
+### Performance
+
+- Tab switching now uses CSS opacity transitions instead of unmount/remount — zero re-fetching, instant state preservation
+- Stabilized all useEffect dependencies using `store.getState()` pattern — eliminated unnecessary re-renders and API calls
+- Event listeners registered once with empty dependency arrays
+- Inactivity tracker throttled to 2 DOM events with timer-based throttle
+
+### UI/UX Improvements
+
+- Smooth 150ms fade transition between tabs with animated underline indicator
+- Custom ConfirmDialog component replacing all native `confirm()` popups — matches Proton design with danger/warning/info variants, backdrop blur, Escape to close
+- Refined spacing and density across all components: sidebar, profile cards, activity log, bottom bar
+- Fade-in animation for error messages and modal content
+- LockScreen polish: logo image, visible input borders, fade-in errors
+- Tighter letter-spacing and improved typography
+- Quieter git identity status bar
+- Smaller, more compact activity log entries
+
 ## [1.0.0] - 2026-04-12
 
 ### M4 — Advanced Features

@@ -7,23 +7,23 @@
   --color-foreground: #eae7f1;
   --color-card: #1c1a27;
   --color-card-foreground: #eae7f1;
-  --color-popover: #1c1a27;
+  --color-popover: #1e1c2a;
   --color-popover-foreground: #eae7f1;
   --color-primary: #8b5cf6;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #221f2e;
+  --color-secondary: #211f2d;
   --color-secondary-foreground: #eae7f1;
-  --color-muted: #221f2e;
+  --color-muted: #211f2d;
   --color-muted-foreground: #8f8a9d;
-  --color-accent: #2a2639;
+  --color-accent: #282537;
   --color-accent-foreground: #eae7f1;
   --color-destructive: #e74c3c;
   --color-destructive-foreground: #ffffff;
   --color-success: #2ecc71;
   --color-success-foreground: #ffffff;
   --color-warning: #f39c12;
-  --color-border: #2a2639;
-  --color-input: #221f2e;
+  --color-border: #272435;
+  --color-input: #211f2d;
   --color-ring: #8b5cf6;
   --color-surface: #1e1c28;
   --color-sidebar: #19172380;
@@ -34,7 +34,7 @@
 
 /* ─── Proton-inspired Light Theme ─── */
 .light {
-  --color-background: #f4f1fa;
+  --color-background: #f5f3fa;
   --color-foreground: #1a1726;
   --color-card: #ffffff;
   --color-card-foreground: #1a1726;
@@ -42,9 +42,9 @@
   --color-popover-foreground: #1a1726;
   --color-primary: #7c3aed;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #ede9f6;
+  --color-secondary: #eee9f7;
   --color-secondary-foreground: #1a1726;
-  --color-muted: #ede9f6;
+  --color-muted: #eee9f7;
   --color-muted-foreground: #6b6580;
   --color-accent: #e8e3f3;
   --color-accent-foreground: #1a1726;
@@ -54,12 +54,12 @@
   --color-success-foreground: #ffffff;
   --color-warning: #d97706;
   --color-border: #ddd6f0;
-  --color-input: #ede9f6;
+  --color-input: #eee9f7;
   --color-ring: #7c3aed;
   --color-surface: #f9f7fd;
   --color-sidebar: #f0ecf8c0;
   --radius: 0.625rem;
-  --titlebar-bg: #eae5f5;
+  --titlebar-bg: #ece7f6;
   --shadow-color: 260 20% 60%;
 }
 
@@ -91,14 +91,27 @@
   --radius: var(--radius);
 }
 
+html {
+  color-scheme: dark;
+}
+html.light {
+  color-scheme: light;
+}
+
 body {
   @apply bg-background text-foreground antialiased;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  letter-spacing: -0.011em;
 }
 
 * {
   @apply border-border;
+}
+
+/* ─── Titlebar ─── */
+.titlebar-bg {
+  background: var(--titlebar-bg);
 }
 
 /* ─── Scrollbar ─── */
@@ -117,17 +130,12 @@ body {
   background: var(--color-muted-foreground);
 }
 
-/* ─── Titlebar ─── */
-.titlebar-bg {
-  background: var(--titlebar-bg);
-}
-
-/* ─── Transitions ─── */
-button,
-a,
-input,
-select {
+/* ─── Smooth transitions ─── */
+button, a {
   transition: all 120ms ease;
+}
+input, select, textarea {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 /* ─── Focus ring ─── */
@@ -144,7 +152,15 @@ select {
   20%, 40%, 60%, 80% { transform: translateX(4px); }
 }
 .animate-shake {
-  animation: shake 0.5s ease-in-out;
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
 }
 
 /* ─── Toast overrides ─── */
