@@ -4,6 +4,7 @@ version = "1.1.0"
 description = "SSH Identity Orchestrator for Git Workflows"
 authors = ["khanhnd"]
 edition = "2021"
+default-run = "maze-ssh"
 
 [lib]
 name = "maze_ssh_lib"
