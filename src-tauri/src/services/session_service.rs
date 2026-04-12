@@ -33,13 +33,12 @@ pub fn check_inactivity_and_lock(app: &tauri::AppHandle) {
         security.is_locked = true;
         drop(security);
 
-        // Clear agent keys
-        let _ = ssh_engine::agent_clear_keys();
-
-        // Emit event to frontend
+        // Emit FIRST so UI locks instantly
         let _ = app.emit("lock-state-changed", serde_json::json!({ "is_locked": true }));
 
-        // Audit log
+        // Then clear agent keys (may take a moment)
+        let _ = ssh_engine::agent_clear_keys();
+
         audit_service::append_log(&AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),
             action: "auto_lock".to_string(),
@@ -71,22 +70,22 @@ pub fn check_agent_expiry(app: &tauri::AppHandle) {
         security.agent_activated_at = None;
         drop(security);
 
-        // Clear agent keys
-        let _ = ssh_engine::agent_clear_keys();
-        let _ = ssh_engine::clear_user_env_git_ssh_command();
-
-        // Clear active profile
+        // Clear active profile state first
         {
             let mut inner = state.inner.lock().unwrap();
             inner.active_profile_id = None;
         }
-        let _ = crate::services::profile_service::save_active_profile_id(None);
 
-        // Emit events
+        // Emit events FIRST so UI updates instantly
         let _ = app.emit(
             "agent-expired",
             serde_json::json!({ "message": "Agent keys expired and cleared" }),
         );
+
+        // Heavy work after emit
+        let _ = ssh_engine::agent_clear_keys();
+        let _ = ssh_engine::clear_user_env_git_ssh_command();
+        let _ = crate::services::profile_service::save_active_profile_id(None);
 
         audit_service::append_log(&AuditEntry {
             timestamp: chrono::Utc::now().to_rfc3339(),

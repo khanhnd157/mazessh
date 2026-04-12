@@ -2,6 +2,50 @@
 
 All notable changes to Maze SSH are documented in this file.
 
+## [1.1.0] - 2026-04-12
+
+### CLI Tool (New)
+
+- Standalone `maze-ssh-cli` binary sharing the same profile data as the desktop app
+- Commands: `list`, `use <name>`, `use --auto`, `current`, `off`, `status`, `test`, `config preview/write/backups`, `export`, `import`
+- Builds independently without Tauri dependency using Rust feature flags
+- Colored terminal output with status indicators
+- CI/CD builds CLI for Windows, macOS (Intel + ARM), and Linux
+
+### Performance
+
+- Eliminated terminal window flash on all spawned processes (`CREATE_NO_WINDOW` flag)
+- SSH key fingerprint caching (ssh-keygen runs once per key, cached permanently)
+- Instant app lock (emit-first pattern: UI locks before background agent cleanup)
+- Optimistic UI updates for lock/switch actions
+- `hidden_cmd()` helper applied to all powershell, ssh-add, ssh-keygen, and git calls
+
+### Security
+
+- PIN rate limiting: max 5 failed attempts, then 60-second lockout
+- Failed attempt counter with remaining attempts shown in audit log
+
+### New Features
+
+- Keyboard shortcuts: Ctrl+1-4 for tabs, Ctrl+L to lock
+- Auto-navigate to Profiles tab when selecting a profile from any tab
+- Loading spinner on Switch button during profile activation
+- Custom ConfirmDialog replacing all native browser confirm() popups
+- Switch dropdown renders via React Portal (no longer clipped by overflow containers)
+- On switch: auto-select profile + navigate to detail + activate in background
+
+### Documentation
+
+- CLI user guide (`docs/CLI.md`)
+- Desktop app user guide in English (`docs/USER_GUIDE.md`) and Vietnamese (`docs/USER_GUIDE_VI.md`)
+
+### Infrastructure
+
+- Feature flags: `desktop` (Tauri, default) vs no-features (CLI only)
+- Separate `[[bin]]` target for CLI in Cargo.toml
+- CI/CD builds CLI binaries for all platforms alongside desktop installers
+- `uiStore` (Zustand) for shared tab navigation state
+
 ## [1.0.1] - 2026-04-12
 
 ### Performance
