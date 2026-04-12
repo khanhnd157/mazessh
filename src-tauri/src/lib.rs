@@ -95,10 +95,9 @@ pub fn run() {
 
             // Start background security timer (15s interval)
             let timer_handle = app.handle().clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(15));
+            tauri::async_runtime::spawn(async move {
                 loop {
-                    interval.tick().await;
+                    tokio::time::sleep(Duration::from_secs(15)).await;
                     session_service::check_inactivity_and_lock(&timer_handle);
                     session_service::check_agent_expiry(&timer_handle);
                 }
