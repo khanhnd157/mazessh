@@ -15,7 +15,7 @@ export function LockScreen() {
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
-    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
 
   const triggerShake = () => {
@@ -74,17 +74,17 @@ export function LockScreen() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-background/98 backdrop-blur-2xl flex flex-col"
+      className="fixed inset-0 z-100 bg-background flex flex-col"
       onKeyDown={(e) => {
-        // Prevent all keyboard shortcuts from reaching the app behind
         if (e.key !== "Tab") e.stopPropagation();
       }}
     >
-      {/* Mini titlebar for window controls only */}
-      <div className="flex justify-end h-9 shrink-0" data-tauri-drag-region>
+      {/* Mini titlebar */}
+      <div className="titlebar-bg flex justify-end h-9 shrink-0" data-tauri-drag-region>
         <button
           type="button"
           onClick={() => appWindow.minimize()}
+          title="Minimize"
           className="h-full w-11.5 flex items-center justify-center text-muted-foreground/40 hover:text-foreground hover:bg-foreground/5"
         >
           <Minus size={15} strokeWidth={1} />
@@ -92,43 +92,41 @@ export function LockScreen() {
         <button
           type="button"
           onClick={() => appWindow.hide()}
+          title="Close"
           className="h-full w-11.5 flex items-center justify-center text-muted-foreground/40 hover:bg-[#c42b1c] hover:text-white"
         >
           <X size={15} strokeWidth={1.5} />
         </button>
       </div>
 
-      {/* Center content */}
+      {/* Center */}
       <div className="flex-1 flex items-center justify-center">
-        <div className={`w-80 text-center ${shake ? "animate-shake" : ""}`}>
+        <div className={`w-72 text-center ${shake ? "animate-shake" : ""}`}>
           {/* Logo */}
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-5">
-            <Lock size={28} className="text-primary" />
-          </div>
+          <img src="/logo.png" alt="Maze SSH" className="w-14 h-14 rounded-2xl mx-auto mb-4 opacity-80" />
 
-          <h1 className="text-lg font-semibold mb-1">Maze SSH</h1>
-          <p className="text-sm text-muted-foreground mb-6">
-            {isSetup ? "Set up a PIN to protect your profiles" : "Enter your PIN to unlock"}
+          <h1 className="text-base font-semibold mb-0.5">Maze SSH</h1>
+          <p className="text-xs text-muted-foreground/60 mb-5">
+            {isSetup ? "Set up a PIN to secure your profiles" : "Enter PIN to continue"}
           </p>
 
           {error && (
-            <div className="flex items-center justify-center gap-1.5 text-destructive text-xs mb-4">
-              <AlertCircle size={13} />
+            <div className="flex items-center justify-center gap-1.5 text-destructive text-xs mb-3 animate-fade-in">
+              <AlertCircle size={12} />
               {error}
             </div>
           )}
 
-          {/* PIN Input */}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             <input
               ref={inputRef}
               type="password"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isSetup ? "Create PIN (4+ chars)" : "Enter PIN"}
+              placeholder={isSetup ? "Create PIN (4+ chars)" : "PIN"}
               autoFocus
-              className="w-full px-4 py-3 rounded-xl bg-secondary border border-transparent text-center text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring placeholder:tracking-normal placeholder:text-muted-foreground/40"
+              className="w-full px-4 py-2.5 rounded-xl bg-secondary border border-border text-center text-sm tracking-[0.2em] focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent placeholder:tracking-normal placeholder:text-muted-foreground/30"
             />
 
             {isSetup && (
@@ -138,7 +136,7 @@ export function LockScreen() {
                 onChange={(e) => setConfirmPin(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Confirm PIN"
-                className="w-full px-4 py-3 rounded-xl bg-secondary border border-transparent text-center text-sm tracking-widest focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring placeholder:tracking-normal placeholder:text-muted-foreground/40"
+                className="w-full px-4 py-2.5 rounded-xl bg-secondary border border-border text-center text-sm tracking-[0.2em] focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent placeholder:tracking-normal placeholder:text-muted-foreground/30"
               />
             )}
 
@@ -146,20 +144,26 @@ export function LockScreen() {
               type="button"
               onClick={isSetup ? handleSetup : handleUnlock}
               disabled={loading || !pin || (isSetup && !confirmPin)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-40"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors disabled:opacity-30"
             >
-              <Unlock size={15} />
-              {loading ? "Please wait..." : isSetup ? "Set PIN & Continue" : "Unlock"}
+              {isSetup ? (
+                <>
+                  <Lock size={14} />
+                  {loading ? "Setting up..." : "Set PIN"}
+                </>
+              ) : (
+                <>
+                  <Unlock size={14} />
+                  {loading ? "Verifying..." : "Unlock"}
+                </>
+              )}
             </button>
 
             {isSetup && (
               <button
                 type="button"
-                onClick={() => {
-                  // Skip setup — dismiss lock without PIN
-                  useSecurityStore.getState().setLocked(false);
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => useSecurityStore.getState().setLocked(false)}
+                className="text-[11px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors"
               >
                 Skip for now
               </button>

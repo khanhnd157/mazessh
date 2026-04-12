@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useConfirm } from "@/hooks/useConfirm";
 import {
   Zap,
   Trash2,
@@ -22,7 +24,6 @@ import { AddRepoMappingDialog } from "@/components/repos/AddRepoMappingDialog";
 import { toast } from "sonner";
 import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
-import { useRepoMappingStore } from "@/stores/repoMappingStore";
 import { useLogStore } from "@/stores/logStore";
 import { commands } from "@/lib/tauri-commands";
 import type { ConnectionTestResult, KeyFingerprint, RepoMappingSummary, SshProfile } from "@/types";
@@ -44,7 +45,6 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [profileMappings, setProfileMappings] = useState<RepoMappingSummary[]>([]);
   const [fingerprint, setFingerprint] = useState<KeyFingerprint | null>(null);
-  const { fetchMappingsForProfile, deleteMapping } = useRepoMappingStore();
 
   // Reset state when switching profiles
   useEffect(() => {
@@ -52,10 +52,11 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     setShowEdit(false);
     setShowAddRepo(false);
     setFingerprint(null);
-    fetchMappingsForProfile(profile.id).then(setProfileMappings);
+    commands.getRepoMappingsForProfile(profile.id).then(setProfileMappings);
     commands.getKeyFingerprint(profile.id).then(setFingerprint).catch(() => {});
-  }, [profile.id, fetchMappingsForProfile]);
+  }, [profile.id]);
 
+  const { confirmProps, confirm } = useConfirm();
   const isActive = activeProfile?.id === profile.id;
 
   const handleActivate = async () => {
@@ -98,8 +99,14 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm(`Delete profile "${profile.name}"?`)) return;
+  const handleDelete = useCallback(async () => {
+    const ok = await confirm({
+      title: `Delete "${profile.name}"?`,
+      description: "This will remove the profile, its repo mappings, and passphrase from keyring. This action cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       await deleteProfile(profile.id);
@@ -111,7 +118,8 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     } finally {
       setDeleting(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.id, profile.name, confirm]);
 
   const copyKeyPath = () => {
     navigator.clipboard.writeText(String(profile.private_key_path));
@@ -300,7 +308,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
                 <button
                   type="button"
                   onClick={async () => {
-                    await deleteMapping(m.id);
+                    await commands.deleteRepoMapping(m.id);
                     setProfileMappings((prev) => prev.filter((p) => p.id !== m.id));
                     toast.success(`Removed ${m.repo_name}`);
                   }}
@@ -321,7 +329,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
           preselectedProfileId={profile.id}
           onClose={async () => {
             setShowAddRepo(false);
-            const updated = await fetchMappingsForProfile(profile.id);
+            const updated = await commands.getRepoMappingsForProfile(profile.id);
             setProfileMappings(updated);
           }}
         />
@@ -332,6 +340,8 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
         Created {new Date(profile.created_at).toLocaleString()} · Updated{" "}
         {new Date(profile.updated_at).toLocaleString()}
       </div>
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   );
 }
