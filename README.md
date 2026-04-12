@@ -2,7 +2,7 @@
 
 SSH Identity Orchestrator for Git Workflows
 
-Maze SSH is a desktop application that helps developers manage multiple SSH identities across GitHub, GitLab, Gitea, and other Git providers. Switch between accounts in one click — no more manual `~/.ssh/config` editing or wrong-key pushes.
+Maze SSH is a desktop application + CLI tool that helps developers manage multiple SSH identities across GitHub, GitLab, Gitea, and other Git providers. Switch between accounts in one click — no more manual `~/.ssh/config` editing or wrong-key pushes.
 
 ## The Problem
 
@@ -19,20 +19,41 @@ Developers working with multiple Git accounts face:
 2. **SSH Agent integration** — Automatically manages the Windows OpenSSH Agent (`ssh-add`), so any terminal session picks up the active key
 3. **Environment injection** — Sets `GIT_SSH_COMMAND` as a persistent user environment variable for all new terminals
 4. **SSH Config generation** — Auto-generates `~/.ssh/config` entries with host aliases, preserving your existing config
-5. **Connection testing** — Verify SSH connectivity per profile directly from the app
+5. **CLI tool** — `maze-ssh-cli use work` from any terminal to switch profiles instantly
 
 ## Features
 
-- **Profile Manager** — Create, edit, and delete SSH identity profiles with provider tagging (GitHub, GitLab, Gitea, Bitbucket)
+### Desktop App
+
+- **Profile Manager** — Create, edit, and delete SSH identity profiles with provider tagging
 - **SSH Key Scanner** — Auto-detects existing keys in `~/.ssh` during profile creation
 - **Quick Switch** — Switch active identity from the titlebar dropdown
 - **SSH Agent Management** — Starts Windows OpenSSH Agent automatically, loads only the active key
-- **SSH Config Generator** — Marker-based managed section (`BEGIN/END MAZE-SSH MANAGED`) that never corrupts your existing config
-- **Connection Test** — Run `ssh -T git@hostname` with the profile's key to verify authentication
-- **System Tray** — Minimize to tray, restore with click, tooltip shows active profile
-- **Activity Log** — Timestamped log of all SSH operations
+- **Repo Mapping** — Auto-switch profiles based on repository directory with git identity sync
+- **SSH Config Generator** — Marker-based managed section that never corrupts your existing config
+- **Git Hooks** — Pre-push identity validation to prevent wrong-account pushes
+- **Config Rollback** — Backup history with one-click restore for SSH config
+- **Profile Export/Import** — Backup and migrate profiles as JSON
+- **Key Fingerprints** — View SSH key fingerprint (SHA256) for each profile
+- **PIN Lock** — Protect profiles with PIN (Argon2 hashed, Windows Credential Manager)
+- **Auto-Lock** — Lock on inactivity timeout or minimize to tray
+- **Agent Key Timeout** — Auto-clear SSH keys from agent after configurable period
+- **Audit Log** — Persistent log of all security-sensitive operations
 - **Dark & Light Theme** — Proton-inspired design with theme toggle
-- **Custom Titlebar** — Windows 11-style window controls
+- **Connection Test** — Verify SSH connectivity per profile
+- **System Tray** — Minimize to tray, tooltip shows active profile
+
+### CLI Tool (`maze-ssh-cli`)
+
+- `maze-ssh-cli list` — List all profiles
+- `maze-ssh-cli use <name>` — Activate a profile
+- `maze-ssh-cli use --auto` — Auto-switch based on current directory
+- `maze-ssh-cli current` — Show active profile
+- `maze-ssh-cli off` — Deactivate and clear agent keys
+- `maze-ssh-cli status` — Show agent, git identity, and profile status
+- `maze-ssh-cli test` — Test SSH connection
+- `maze-ssh-cli config preview/write/backups` — Manage SSH config
+- `maze-ssh-cli export/import` — Backup and restore profiles
 
 ## Screenshots
 
@@ -44,18 +65,23 @@ Developers working with multiple Git accounts face:
 
 ![Maze SSH - Light Theme](images/Maze%20SSH%20-%20Light%20theme.png)
 
+## Documentation
+
+- [User Guide (English)](docs/USER_GUIDE.md)
+- [User Guide (Vietnamese)](docs/USER_GUIDE_VI.md)
+- [CLI Reference](docs/CLI.md)
+
 ## Tech Stack
 
-| Layer             | Technology                                      |
-| ----------------- | ----------------------------------------------- |
-| Desktop Runtime   | [Tauri 2](https://tauri.app/)                   |
-| Backend           | Rust                                            |
-| Frontend          | React + TypeScript                              |
-| Styling           | Tailwind CSS v4                                 |
-| State             | Zustand                                         |
-| Icons             | Lucide React                                    |
-| Notifications     | Sonner                                          |
-| Security          | Windows Credential Manager via `keyring` crate  |
+| Layer           | Technology                                     |
+| --------------- | ---------------------------------------------- |
+| Desktop Runtime | [Tauri 2](https://tauri.app/)                  |
+| Backend         | Rust                                           |
+| Frontend        | React + TypeScript                             |
+| Styling         | Tailwind CSS v4                                |
+| State           | Zustand                                        |
+| CLI             | Clap + Colored                                 |
+| Security        | Windows Credential Manager via `keyring` crate |
 
 ## Getting Started
 
@@ -70,23 +96,29 @@ Developers working with multiple Git accounts face:
 
 ```bash
 # Clone the repository
-git clone https://github.com/khanhnd/maze-ssh.git
-cd maze-ssh
+git clone https://github.com/khanhnd157/mazessh.git
+cd mazessh
 
 # Install dependencies
 pnpm install
 
-# Run in development mode
+# Run desktop app in development mode
 pnpm tauri dev
+
+# Build CLI tool
+cd src-tauri
+cargo build --bin maze-ssh-cli --no-default-features --release
 ```
 
 ### Build for Production
 
 ```bash
+# Desktop app (generates MSI + NSIS installers)
 pnpm tauri build
-```
 
-The installer will be generated in `src-tauri/target/release/bundle/`.
+# CLI tool
+cd src-tauri && cargo build --bin maze-ssh-cli --no-default-features --release
+```
 
 ## How It Works
 
@@ -107,37 +139,22 @@ This means after switching:
 ```text
 maze-ssh/
 ├── src/                          # React frontend
-│   ├── components/
-│   │   ├── layout/               # TitleBar, Sidebar, MainPanel, BottomBar
-│   │   ├── profiles/             # ProfileList, ProfileCard, ProfileDetail, ProfileForm
-│   │   ├── switch/               # QuickSwitch, ActiveBadge
-│   │   ├── repos/                # RepoMappingList, RepoMappingCard, AddRepoMappingDialog
-│   │   ├── security/             # LockScreen
-│   │   ├── settings/             # SecuritySettings, AuditLogViewer
-│   │   ├── ssh-config/           # ConfigPreview (with rollback + backups)
-│   │   └── logs/                 # ActivityLog
-│   ├── stores/                   # Zustand (profile, app, log, theme, security, repoMapping)
-│   ├── hooks/                    # useInactivityTracker
+│   ├── components/               # UI components (layout, profiles, repos, security, settings)
+│   ├── stores/                   # Zustand stores (profile, app, log, theme, security, repoMapping, ui)
+│   ├── hooks/                    # useInactivityTracker, useKeyboardShortcuts, useConfirm
 │   ├── lib/                      # Tauri command wrappers (40+ commands)
 │   └── types/                    # TypeScript type definitions
 │
 ├── src-tauri/                    # Rust backend
 │   └── src/
-│       ├── commands/             # 40+ Tauri commands (profiles, switch, security,
-│       │                         # repos, git identity, hooks, advanced)
+│       ├── bin/cli.rs            # CLI binary (maze-ssh-cli)
+│       ├── commands/             # 40+ Tauri commands
 │       ├── models/               # SshProfile, RepoMapping, SecuritySettings, AuditEntry
-│       └── services/             # profile, ssh_engine, config_engine, key_scanner,
-│                                 # security, lock, session, audit, settings,
-│                                 # repo_mapping, repo_detection, git_identity
+│       └── services/             # Shared business logic (used by both desktop and CLI)
+│
+├── docs/                         # User guides (EN + VI) and CLI reference
+└── .github/workflows/            # CI/CD for all platforms
 ```
-
-## Roadmap
-
-- [x] **M1 — Core MVP**: Profile CRUD, quick switch, SSH agent integration, config generator
-- [x] **M2 — Automation**: Per-repo auto-mapping, git identity sync (`user.name`/`user.email`)
-- [x] **M3 — Security**: PIN lock, auto-lock on inactivity, agent key timeout, persistent audit log
-- [x] **M4 — Advanced**: Git hooks (pre-push identity validation), SSH config rollback, profile export/import, key fingerprints
-- [ ] **M5 — Ecosystem**: CLI tool (`maze-ssh use work`), API integration (GitHub/GitLab key upload), SSH key generator
 
 ## License
 
@@ -145,4 +162,4 @@ MIT
 
 ## Author
 
-Built by [@khanhnd157](https://github.com/khanhnd157) — open source with ❤️
+Built by [@khanhnd157](https://github.com/khanhnd157)
