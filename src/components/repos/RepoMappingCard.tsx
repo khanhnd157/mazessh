@@ -1,5 +1,6 @@
-import { FolderGit2, Trash2 } from "lucide-react";
+import { FolderGit2, Trash2, GitBranch } from "lucide-react";
 import { toast } from "sonner";
+import { commands } from "@/lib/tauri-commands";
 import { useRepoMappingStore } from "@/stores/repoMappingStore";
 import { useLogStore } from "@/stores/logStore";
 import { ProviderIcon } from "@/components/profiles/ProviderIcon";
@@ -57,6 +58,22 @@ export function RepoMappingCard({ mapping }: RepoMappingCardProps) {
             <span className="text-[11px] font-medium">{mapping.profile_name}</span>
           </div>
         )}
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const path = await commands.generateGitHook(mapping.repo_path);
+              addLog({ action: "hook", detail: `Pre-push hook installed: ${path}`, level: "info" });
+              toast.success("Git hook installed", { description: "pre-push identity validation" });
+            } catch (err) {
+              toast.error("Hook failed", { description: String(err) });
+            }
+          }}
+          title="Install pre-push hook"
+          className="p-1.5 rounded-md text-muted-foreground/40 hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-all"
+        >
+          <GitBranch size={13} />
+        </button>
         <button
           type="button"
           onClick={handleDelete}

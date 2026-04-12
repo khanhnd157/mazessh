@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::State;
 
+use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::services::ssh_engine;
 use crate::state::AppState;
@@ -17,6 +18,7 @@ pub fn get_git_ssh_command(
     id: String,
     state: State<'_, AppState>,
 ) -> Result<String, MazeSshError> {
+    ensure_unlocked(&state)?;
     let inner = state.inner.lock().unwrap();
     let profile = inner
         .profiles
@@ -31,6 +33,7 @@ pub async fn test_ssh_connection(
     id: String,
     state: State<'_, AppState>,
 ) -> Result<ConnectionTestResult, MazeSshError> {
+    ensure_unlocked(&state)?;
     let (profile_name, hostname, key_path, port) = {
         let inner = state.inner.lock().unwrap();
         let profile = inner
