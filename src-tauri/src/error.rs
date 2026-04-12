@@ -35,6 +35,15 @@ pub enum MazeSshError {
 
     #[error("Duplicate mapping for repo: {0}")]
     DuplicateMapping(String),
+
+    #[error("App is locked")]
+    AppLocked,
+
+    #[error("Security error: {0}")]
+    SecurityError(String),
+
+    #[error("PIN is not configured")]
+    PinNotSet,
 }
 
 impl Serialize for MazeSshError {

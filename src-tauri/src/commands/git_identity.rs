@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use tauri::State;
 
+use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::repo_mapping::{GitConfigScope, GitIdentityInfo};
 use crate::services::git_identity_service;
@@ -23,6 +24,7 @@ pub fn sync_git_identity(
     scope: GitConfigScope,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
     let inner = state.inner.lock().unwrap();
     let profile = inner
         .profiles

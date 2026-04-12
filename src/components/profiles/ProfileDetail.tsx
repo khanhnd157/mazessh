@@ -24,7 +24,8 @@ import { useAppStore } from "@/stores/appStore";
 import { useProfileStore } from "@/stores/profileStore";
 import { useRepoMappingStore } from "@/stores/repoMappingStore";
 import { useLogStore } from "@/stores/logStore";
-import type { ConnectionTestResult, RepoMappingSummary, SshProfile } from "@/types";
+import { commands } from "@/lib/tauri-commands";
+import type { ConnectionTestResult, KeyFingerprint, RepoMappingSummary, SshProfile } from "@/types";
 import { getProviderLabel } from "@/types";
 import { ProviderIcon } from "./ProviderIcon";
 
@@ -42,6 +43,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
   const [showEdit, setShowEdit] = useState(false);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [profileMappings, setProfileMappings] = useState<RepoMappingSummary[]>([]);
+  const [fingerprint, setFingerprint] = useState<KeyFingerprint | null>(null);
   const { fetchMappingsForProfile, deleteMapping } = useRepoMappingStore();
 
   // Reset state when switching profiles
@@ -49,7 +51,9 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     setTestResult(null);
     setShowEdit(false);
     setShowAddRepo(false);
+    setFingerprint(null);
     fetchMappingsForProfile(profile.id).then(setProfileMappings);
+    commands.getKeyFingerprint(profile.id).then(setFingerprint).catch(() => {});
   }, [profile.id, fetchMappingsForProfile]);
 
   const isActive = activeProfile?.id === profile.id;
@@ -177,6 +181,15 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
           </button>
         </div>
       </div>
+
+      {/* Key Fingerprint */}
+      {fingerprint && (
+        <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary/30 text-xs font-mono text-muted-foreground">
+          <span className="text-primary/70">{fingerprint.key_type}</span>
+          <span>{fingerprint.hash}</span>
+          <span className="text-muted-foreground/50">{fingerprint.bits} bits</span>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center gap-2">

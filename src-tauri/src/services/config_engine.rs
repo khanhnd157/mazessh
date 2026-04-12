@@ -78,6 +78,78 @@ pub fn backup_config() -> Result<String, MazeSshError> {
     Ok(backup_path.to_string_lossy().to_string())
 }
 
+/// List all backup files for SSH config, newest first
+pub fn list_backups() -> Result<Vec<ConfigBackup>, MazeSshError> {
+    let ssh_dir = dirs::home_dir()
+        .expect("Could not find home directory")
+        .join(".ssh");
+    if !ssh_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut backups: Vec<ConfigBackup> = Vec::new();
+    for entry in fs::read_dir(&ssh_dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with("config.backup.") {
+            let path = entry.path();
+            let metadata = entry.metadata()?;
+            let size = metadata.len();
+            backups.push(ConfigBackup {
+                filename: name,
+                path: path.to_string_lossy().to_string(),
+                size,
+                created_at: metadata
+                    .modified()
+                    .ok()
+                    .map(|t| {
+                        chrono::DateTime::<chrono::Local>::from(t)
+                            .format("%Y-%m-%d %H:%M:%S")
+                            .to_string()
+                    })
+                    .unwrap_or_default(),
+            });
+        }
+    }
+    backups.sort_by(|a, b| b.filename.cmp(&a.filename));
+    Ok(backups)
+}
+
+/// Restore SSH config from a backup file
+pub fn rollback_config(backup_path: &str) -> Result<(), MazeSshError> {
+    let backup = std::path::Path::new(backup_path);
+    if !backup.exists() {
+        return Err(MazeSshError::ConfigError(format!(
+            "Backup not found: {}",
+            backup_path
+        )));
+    }
+    let config_path = ssh_config_path();
+    // Backup current before rollback
+    if config_path.exists() {
+        let _ = backup_config();
+    }
+    fs::copy(backup, &config_path)?;
+    Ok(())
+}
+
+/// Read the current SSH config content
+pub fn read_current_config() -> Result<String, MazeSshError> {
+    let path = ssh_config_path();
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    Ok(fs::read_to_string(&path)?)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConfigBackup {
+    pub filename: String,
+    pub path: String,
+    pub size: u64,
+    pub created_at: String,
+}
+
 fn replace_managed_section(existing: &str, new_block: &str) -> String {
     if let (Some(begin), Some(end)) = (existing.find(BEGIN_MARKER), existing.find(END_MARKER)) {
         let end_of_marker = end + END_MARKER.len();

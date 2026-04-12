@@ -107,6 +107,42 @@ export interface GitIdentityInfo {
   scope: string;
 }
 
+// ── M3: Security Types ──
+
+export interface SecuritySettings {
+  auto_lock_timeout_minutes: number | null;
+  agent_key_timeout_minutes: number | null;
+  lock_on_minimize: boolean;
+}
+
+export interface LockStateResponse {
+  is_locked: boolean;
+  pin_is_set: boolean;
+}
+
+export interface AuditEntry {
+  timestamp: string;
+  action: string;
+  profile_name: string | null;
+  result: string;
+}
+
+// ── M4: Advanced Types ──
+
+export interface ConfigBackup {
+  filename: string;
+  path: string;
+  size: number;
+  created_at: string;
+}
+
+export interface KeyFingerprint {
+  bits: string;
+  hash: string;
+  comment: string;
+  key_type: string;
+}
+
 // ── Helpers ──
 
 export function getProviderLabel(provider: Provider): string {

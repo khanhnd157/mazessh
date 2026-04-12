@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use tauri::State;
 
+use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::repo_mapping::{
     CreateRepoMappingInput, GitConfigScope, RepoMapping, RepoMappingSummary,
@@ -21,6 +22,7 @@ fn build_summary(mapping: &RepoMapping, profile_name: String) -> RepoMappingSumm
 
 #[tauri::command]
 pub fn get_repo_mappings(state: State<'_, AppState>) -> Result<Vec<RepoMappingSummary>, MazeSshError> {
+    ensure_unlocked(&state)?;
     let inner = state.inner.lock().unwrap();
     let summaries = inner
         .repo_mappings
@@ -43,6 +45,7 @@ pub fn get_repo_mappings_for_profile(
     profile_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<RepoMappingSummary>, MazeSshError> {
+    ensure_unlocked(&state)?;
     let inner = state.inner.lock().unwrap();
     let profile_name = inner
         .profiles
@@ -65,6 +68,7 @@ pub fn create_repo_mapping(
     input: CreateRepoMappingInput,
     state: State<'_, AppState>,
 ) -> Result<RepoMapping, MazeSshError> {
+    ensure_unlocked(&state)?;
     let repo_path = PathBuf::from(&input.repo_path);
 
     // Validate path exists
@@ -121,6 +125,7 @@ pub fn create_repo_mapping(
 
 #[tauri::command]
 pub fn delete_repo_mapping(id: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
     let mut inner = state.inner.lock().unwrap();
     let idx = inner
         .repo_mappings
@@ -139,6 +144,7 @@ pub fn update_repo_mapping_scope(
     scope: GitConfigScope,
     state: State<'_, AppState>,
 ) -> Result<RepoMapping, MazeSshError> {
+    ensure_unlocked(&state)?;
     let mut inner = state.inner.lock().unwrap();
     let mapping = inner
         .repo_mappings

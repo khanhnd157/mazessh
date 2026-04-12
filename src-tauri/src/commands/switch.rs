@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
+use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::profile::ProfileSummary;
 use crate::services::{git_identity_service, profile_service, ssh_engine};
@@ -25,6 +26,14 @@ pub async fn activate_profile(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<ActivationResult, MazeSshError> {
+    ensure_unlocked(&state)?;
+
+    // Mark agent activation time for session timeout
+    {
+        let mut security = state.security.lock().unwrap();
+        security.agent_activated_at = Some(std::time::Instant::now());
+    }
+
     // Step 1: Quick state update (instant)
     let (profile, git_ssh_command, key_path) = {
         let mut inner = state.inner.lock().unwrap();
@@ -103,6 +112,14 @@ pub async fn deactivate_profile(
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+
+    // Clear agent activation time
+    {
+        let mut security = state.security.lock().unwrap();
+        security.agent_activated_at = None;
+    }
+
     // Quick state update
     {
         let mut inner = state.inner.lock().unwrap();
