@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "sonner";
 import { KeyRound, FileCode2, FolderGit2, Settings } from "lucide-react";
@@ -21,35 +21,36 @@ import type { AgentStatusEvent } from "@/types";
 type Tab = "profiles" | "config" | "repos" | "settings";
 
 function App() {
-  const { fetchProfiles } = useProfileStore();
-  const { fetchActiveProfile, fetchGitIdentity } = useAppStore();
-  const { addLog } = useLogStore();
-  const { theme } = useThemeStore();
-  const { isLocked, initialized, fetchLockState, setLocked, fetchSettings } = useSecurityStore();
+  const theme = useThemeStore((s) => s.theme);
+  const isLocked = useSecurityStore((s) => s.isLocked);
+  const initialized = useSecurityStore((s) => s.initialized);
   const [activeTab, setActiveTab] = useState<Tab>("profiles");
+  const didInit = useRef(false);
 
-  // Track user activity for auto-lock
   useInactivityTracker();
 
-  // Initialize
+  // One-time initialization
   useEffect(() => {
-    fetchLockState();
-    fetchSettings();
-  }, [fetchLockState, fetchSettings]);
+    if (didInit.current) return;
+    didInit.current = true;
 
-  // Only fetch data once unlocked
+    useSecurityStore.getState().fetchLockState();
+    useSecurityStore.getState().fetchSettings();
+  }, []);
+
+  // Fetch data once unlocked
   useEffect(() => {
     if (!isLocked && initialized) {
-      fetchProfiles();
-      fetchActiveProfile();
-      fetchGitIdentity();
+      useProfileStore.getState().fetchProfiles();
+      useAppStore.getState().fetchActiveProfile();
+      useAppStore.getState().fetchGitIdentity();
     }
-  }, [isLocked, initialized, fetchProfiles, fetchActiveProfile, fetchGitIdentity]);
+  }, [isLocked, initialized]);
 
-  // Listen for backend events
+  // Event listeners — stable, no store deps
   useEffect(() => {
     const unlistenAgent = listen<AgentStatusEvent>("agent-status", (event) => {
-      addLog({
+      useLogStore.getState().addLog({
         action: "agent",
         detail: event.payload.status,
         level: event.payload.success ? "info" : "warn",
@@ -59,12 +60,12 @@ function App() {
       } else {
         toast.warning("SSH Agent", { description: event.payload.status });
       }
-      fetchGitIdentity();
+      useAppStore.getState().fetchGitIdentity();
     });
 
     const unlistenLock = listen("lock-state-changed", (event) => {
       const payload = event.payload as { is_locked: boolean };
-      setLocked(payload.is_locked);
+      useSecurityStore.getState().setLocked(payload.is_locked);
       if (payload.is_locked) {
         toast.info("App locked");
       }
@@ -72,9 +73,9 @@ function App() {
 
     const unlistenExpiry = listen("agent-expired", (event) => {
       const payload = event.payload as { message: string };
-      addLog({ action: "agent", detail: payload.message, level: "warn" });
+      useLogStore.getState().addLog({ action: "agent", detail: payload.message, level: "warn" });
       toast.warning("Agent keys expired", { description: payload.message });
-      fetchActiveProfile();
+      useAppStore.getState().fetchActiveProfile();
     });
 
     return () => {
@@ -82,7 +83,7 @@ function App() {
       unlistenLock.then((fn) => fn());
       unlistenExpiry.then((fn) => fn());
     };
-  }, [addLog, fetchGitIdentity, fetchActiveProfile, setLocked]);
+  }, []);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
@@ -93,7 +94,6 @@ function App() {
         toastOptions={{ duration: 3000 }}
       />
 
-      {/* Lock screen overlay */}
       {isLocked && initialized && <LockScreen />}
 
       <TitleBar />
@@ -126,23 +126,20 @@ function App() {
               onClick={() => setActiveTab("settings")}
             />
           </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {activeTab === "profiles" && <MainPanel />}
-            {activeTab === "repos" && (
-              <div className="p-6 overflow-y-auto h-full">
-                <RepoMappingList />
-              </div>
-            )}
-            {activeTab === "config" && (
-              <div className="p-6 overflow-y-auto h-full">
-                <ConfigPreview />
-              </div>
-            )}
-            {activeTab === "settings" && (
-              <div className="p-6 overflow-y-auto h-full">
-                <SecuritySettingsPanel />
-              </div>
-            )}
+          {/* All panels stay mounted; active panel fades in, others hidden */}
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            <TabPanel active={activeTab === "profiles"}>
+              <MainPanel />
+            </TabPanel>
+            <TabPanel active={activeTab === "repos"} scrollable>
+              <RepoMappingList />
+            </TabPanel>
+            <TabPanel active={activeTab === "config"} scrollable>
+              <ConfigPreview />
+            </TabPanel>
+            <TabPanel active={activeTab === "settings"} scrollable>
+              <SecuritySettingsPanel />
+            </TabPanel>
           </div>
         </div>
       </div>
@@ -166,15 +163,41 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors ${
-        active
-          ? "border-b-2 border-primary text-foreground"
-          : "text-muted-foreground hover:text-foreground"
+      className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all duration-150 ${
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       }`}
     >
       {icon}
       {label}
+      {/* Animated underline indicator */}
+      <span
+        className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary transition-all duration-200 ease-out ${
+          active ? "opacity-100 scale-x-100" : "opacity-0 scale-x-0"
+        }`}
+      />
     </button>
+  );
+}
+
+function TabPanel({
+  active,
+  scrollable,
+  children,
+}: {
+  active: boolean;
+  scrollable?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`absolute inset-0 transition-opacity duration-150 ease-in-out ${
+        active
+          ? "opacity-100 z-10 pointer-events-auto"
+          : "opacity-0 z-0 pointer-events-none"
+      } ${scrollable ? "p-6 overflow-y-auto" : ""}`}
+    >
+      {children}
+    </div>
   );
 }
 
