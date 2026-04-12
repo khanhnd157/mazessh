@@ -53,8 +53,12 @@ export const useSecurityStore = create<SecurityStore>((set) => ({
   },
 
   lockApp: async () => {
-    await commands.lockApp();
+    // Optimistic: lock UI immediately, then tell backend
     set({ isLocked: true });
+    commands.lockApp().catch(() => {
+      // If backend fails, unlock (shouldn't happen)
+      set({ isLocked: false });
+    });
   },
 
   changePin: async (oldPin: string, newPin: string) => {

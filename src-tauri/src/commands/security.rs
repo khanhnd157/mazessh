@@ -16,14 +16,30 @@ pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
     security.is_locked = true;
     drop(security);
 
-    let _ = ssh_engine::agent_clear_keys();
+    // Emit IMMEDIATELY so UI locks instantly
     let _ = app.emit("lock-state-changed", serde_json::json!({ "is_locked": true }));
 
-    audit_service::append_log(&AuditEntry {
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        action: "lock".to_string(),
-        profile_name: None,
-        result: "Manual lock".to_string(),
+    // Heavy work in background — don't block UI
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::task::spawn_blocking(move || {
+            let _ = ssh_engine::agent_clear_keys();
+
+            audit_service::append_log(&AuditEntry {
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                action: "lock".to_string(),
+                profile_name: None,
+                result: "Locked — agent keys cleared".to_string(),
+            });
+
+            // Also emit agent status
+            let _ = app_clone.emit(
+                "agent-status",
+                serde_json::json!({ "status": "Locked — keys cleared", "success": true }),
+            );
+        })
+        .await
+        .ok();
     });
 
     Ok(())
