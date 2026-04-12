@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::State;
 
 use crate::commands::security::ensure_unlocked;
@@ -7,7 +9,12 @@ use crate::models::profile::SshProfile;
 use crate::services::profile_service;
 use crate::state::AppState;
 
-/// Export all profiles as JSON string (no secrets, only metadata)
+// ── Fingerprint cache (avoid re-spawning ssh-keygen for the same key) ──
+
+static FINGERPRINT_CACHE: std::sync::LazyLock<Mutex<HashMap<String, KeyFingerprint>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Export all profiles as JSON string
 #[tauri::command]
 pub fn export_profiles(state: State<'_, AppState>) -> Result<String, MazeSshError> {
     ensure_unlocked(&state)?;
@@ -29,11 +36,9 @@ pub fn import_profiles(
     let mut count = 0u32;
 
     for mut profile in imported {
-        // Skip if same name already exists
         if inner.profiles.iter().any(|p| p.name == profile.name) {
             continue;
         }
-        // Regenerate ID to avoid conflicts
         profile.id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
         profile.created_at = now.clone();
@@ -46,7 +51,7 @@ pub fn import_profiles(
     Ok(count)
 }
 
-/// Get SSH key fingerprint for a profile's key
+/// Get SSH key fingerprint (cached — ssh-keygen only runs once per key path)
 #[tauri::command]
 pub fn get_key_fingerprint(
     id: String,
@@ -60,14 +65,28 @@ pub fn get_key_fingerprint(
         .find(|p| p.id == id)
         .ok_or_else(|| MazeSshError::ProfileNotFound(id))?;
 
-    let pub_path = &profile.public_key_path;
-    let fingerprint = compute_fingerprint(pub_path)?;
+    let pub_path_str = profile.public_key_path.to_string_lossy().to_string();
+
+    // Check cache first
+    {
+        let cache = FINGERPRINT_CACHE.lock().unwrap();
+        if let Some(cached) = cache.get(&pub_path_str) {
+            return Ok(cached.clone());
+        }
+    }
+
+    let fingerprint = compute_fingerprint(&profile.public_key_path)?;
+
+    // Store in cache
+    {
+        let mut cache = FINGERPRINT_CACHE.lock().unwrap();
+        cache.insert(pub_path_str, fingerprint.clone());
+    }
 
     Ok(fingerprint)
 }
 
 fn compute_fingerprint(pub_key_path: &PathBuf) -> Result<KeyFingerprint, MazeSshError> {
-    // Try ssh-keygen -lf <path>
     let ssh_keygen = if cfg!(windows) {
         let system = std::path::Path::new("C:\\Windows\\System32\\OpenSSH\\ssh-keygen.exe");
         if system.exists() {
@@ -79,8 +98,17 @@ fn compute_fingerprint(pub_key_path: &PathBuf) -> Result<KeyFingerprint, MazeSsh
         "ssh-keygen".to_string()
     };
 
-    let output = std::process::Command::new(&ssh_keygen)
-        .args(["-lf", &pub_key_path.to_string_lossy()])
+    let mut cmd = std::process::Command::new(&ssh_keygen);
+    cmd.args(["-lf", &pub_key_path.to_string_lossy()]);
+
+    // Hide console window on Windows
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd
         .output()
         .map_err(|e| MazeSshError::ConfigError(format!("ssh-keygen failed: {}", e)))?;
 
