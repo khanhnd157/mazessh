@@ -2,6 +2,17 @@ use std::process::Command;
 
 use crate::models::profile::SshProfile;
 
+/// Create a Command with hidden console window on Windows
+fn hidden_cmd(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
 pub fn build_git_ssh_command(profile: &SshProfile) -> String {
     let key_path = profile.private_key_path.to_string_lossy();
     let port = profile.port_or_default();
@@ -55,7 +66,7 @@ pub fn clear_env_file() -> Result<(), std::io::Error> {
 /// Returns Ok(true) if agent is running, Ok(false) if failed to start.
 pub fn ensure_agent_running() -> Result<bool, String> {
     // Check if agent is already running
-    let status = Command::new("powershell")
+    let status = hidden_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -70,7 +81,7 @@ pub fn ensure_agent_running() -> Result<bool, String> {
     }
 
     // Try to start the service (requires admin for first-time, but if StartType=Manual it may work)
-    let start = Command::new("powershell")
+    let start = hidden_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -81,7 +92,7 @@ pub fn ensure_agent_running() -> Result<bool, String> {
 
     if !start.status.success() {
         // Try with elevated privileges
-        let elevate = Command::new("powershell")
+        let elevate = hidden_cmd("powershell")
             .args([
                 "-NoProfile",
                 "-Command",
@@ -96,7 +107,7 @@ pub fn ensure_agent_running() -> Result<bool, String> {
     }
 
     // Verify it started
-    let verify = Command::new("powershell")
+    let verify = hidden_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -115,10 +126,10 @@ pub fn agent_switch_key(key_path: &str) -> Result<String, String> {
     let ssh_add = find_ssh_add();
 
     // Remove all existing keys
-    let _ = Command::new(&ssh_add).arg("-D").output();
+    let _ = hidden_cmd(&ssh_add).arg("-D").output();
 
     // Add the new key
-    let output = Command::new(&ssh_add)
+    let output = hidden_cmd(&ssh_add)
         .arg(key_path)
         .output()
         .map_err(|e| format!("Failed to run ssh-add: {}", e))?;
@@ -137,7 +148,7 @@ pub fn agent_switch_key(key_path: &str) -> Result<String, String> {
 /// Remove all keys from agent
 pub fn agent_clear_keys() -> Result<(), String> {
     let ssh_add = find_ssh_add();
-    let _ = Command::new(&ssh_add).arg("-D").output();
+    let _ = hidden_cmd(&ssh_add).arg("-D").output();
     Ok(())
 }
 
@@ -145,7 +156,7 @@ pub fn agent_clear_keys() -> Result<(), String> {
 #[allow(dead_code)]
 pub fn agent_list_keys() -> Result<String, String> {
     let ssh_add = find_ssh_add();
-    let output = Command::new(&ssh_add)
+    let output = hidden_cmd(&ssh_add)
         .arg("-l")
         .output()
         .map_err(|e| format!("Failed to run ssh-add: {}", e))?;
@@ -165,7 +176,7 @@ pub fn agent_list_keys() -> Result<String, String> {
 pub fn set_user_env_git_ssh_command(profile: &SshProfile) -> Result<(), String> {
     let ssh_command = build_git_ssh_command(profile);
 
-    Command::new("powershell")
+    hidden_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -182,7 +193,7 @@ pub fn set_user_env_git_ssh_command(profile: &SshProfile) -> Result<(), String> 
 
 /// Clear GIT_SSH_COMMAND from user environment
 pub fn clear_user_env_git_ssh_command() -> Result<(), String> {
-    Command::new("powershell")
+    hidden_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
