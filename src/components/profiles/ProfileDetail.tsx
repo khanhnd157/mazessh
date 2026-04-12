@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useConfirm } from "@/hooks/useConfirm";
 import {
   Zap,
   Trash2,
@@ -54,6 +56,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     commands.getKeyFingerprint(profile.id).then(setFingerprint).catch(() => {});
   }, [profile.id]);
 
+  const { confirmProps, confirm } = useConfirm();
   const isActive = activeProfile?.id === profile.id;
 
   const handleActivate = async () => {
@@ -96,8 +99,14 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirm(`Delete profile "${profile.name}"?`)) return;
+  const handleDelete = useCallback(async () => {
+    const ok = await confirm({
+      title: `Delete "${profile.name}"?`,
+      description: "This will remove the profile, its repo mappings, and passphrase from keyring. This action cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       await deleteProfile(profile.id);
@@ -109,7 +118,8 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     } finally {
       setDeleting(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.id, profile.name, confirm]);
 
   const copyKeyPath = () => {
     navigator.clipboard.writeText(String(profile.private_key_path));
@@ -330,6 +340,8 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
         Created {new Date(profile.created_at).toLocaleString()} · Updated{" "}
         {new Date(profile.updated_at).toLocaleString()}
       </div>
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   );
 }

@@ -5,6 +5,8 @@ import {
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
 import { useLogStore } from "@/stores/logStore";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useConfirm } from "@/hooks/useConfirm";
 import type { ConfigBackup } from "@/types";
 
 type View = "preview" | "current" | "backups";
@@ -17,6 +19,7 @@ export function ConfigPreview() {
   const [writing, setWriting] = useState(false);
   const [view, setView] = useState<View>("preview");
   const { addLog } = useLogStore();
+  const { confirmProps, confirm } = useConfirm();
 
   const loadPreview = async () => {
     setLoading(true);
@@ -55,7 +58,13 @@ export function ConfigPreview() {
   }, []);
 
   const handleWrite = async () => {
-    if (!confirm("Write SSH config? A backup will be created first.")) return;
+    const ok = await confirm({
+      title: "Write SSH config?",
+      description: "A backup of your current ~/.ssh/config will be created before writing the new configuration.",
+      confirmLabel: "Write Config",
+      variant: "warning",
+    });
+    if (!ok) return;
     setWriting(true);
     try {
       const backupPath = await commands.backupSshConfig().catch(() => null);
@@ -76,7 +85,13 @@ export function ConfigPreview() {
   };
 
   const handleRollback = async (backup: ConfigBackup) => {
-    if (!confirm(`Rollback to ${backup.filename}? Current config will be backed up first.`)) return;
+    const ok = await confirm({
+      title: "Rollback SSH config?",
+      description: `Restore from "${backup.filename}"? Your current config will be backed up automatically before restoring.`,
+      confirmLabel: "Rollback",
+      variant: "warning",
+    });
+    if (!ok) return;
     try {
       await commands.rollbackSshConfig(backup.path);
       addLog({ action: "rollback", detail: `Restored ${backup.filename}`, level: "info" });
@@ -204,6 +219,8 @@ export function ConfigPreview() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   );
 }
