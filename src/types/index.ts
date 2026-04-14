@@ -143,6 +143,20 @@ export interface KeyFingerprint {
   key_type: string;
 }
 
+export interface KeyHealthReport {
+  profile_name: string;
+  key_type: string;
+  bits: number;
+  has_public_key: boolean;
+  has_passphrase: boolean;
+  issues: KeyHealthIssue[];
+}
+
+export interface KeyHealthIssue {
+  severity: "critical" | "warning" | "info";
+  message: string;
+}
+
 // ── Helpers ──
 
 export function getProviderLabel(provider: Provider): string {

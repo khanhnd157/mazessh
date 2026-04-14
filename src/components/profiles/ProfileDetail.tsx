@@ -126,6 +126,16 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     toast.info("Key path copied");
   };
 
+  const copyPublicKey = async () => {
+    try {
+      const pubKey = await commands.readPublicKey(profile.id);
+      await navigator.clipboard.writeText(pubKey);
+      toast.success("Public key copied to clipboard");
+    } catch {
+      toast.error("Could not read public key");
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-2xl">
       {/* Header */}
@@ -190,12 +200,21 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
         </div>
       </div>
 
-      {/* Key Fingerprint */}
+      {/* Key Fingerprint + Copy Public Key */}
       {fingerprint && (
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary/30 text-xs font-mono text-muted-foreground">
           <span className="text-primary/70">{fingerprint.key_type}</span>
           <span>{fingerprint.hash}</span>
           <span className="text-muted-foreground/50">{fingerprint.bits} bits</span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={copyPublicKey}
+            title="Copy public key to clipboard"
+            className="text-[10px] font-sans font-medium px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            Copy Public Key
+          </button>
         </div>
       )}
 

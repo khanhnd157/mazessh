@@ -141,3 +141,129 @@ pub struct KeyFingerprint {
     pub comment: String,
     pub key_type: String,
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KeyHealthReport {
+    pub profile_name: String,
+    pub key_type: String,
+    pub bits: u32,
+    pub has_public_key: bool,
+    pub has_passphrase: bool,
+    pub issues: Vec<KeyHealthIssue>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct KeyHealthIssue {
+    pub severity: String,
+    pub message: String,
+}
+
+/// Run a health check on all profile SSH keys
+#[tauri::command]
+pub fn check_all_keys_health(
+    state: State<'_, AppState>,
+) -> Result<Vec<KeyHealthReport>, MazeSshError> {
+    ensure_unlocked(&state)?;
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
+
+    let reports: Vec<KeyHealthReport> = inner
+        .profiles
+        .iter()
+        .map(|profile| {
+            let mut issues = Vec::new();
+
+            if !profile.private_key_path.exists() {
+                issues.push(KeyHealthIssue {
+                    severity: "critical".to_string(),
+                    message: "Private key file not found".to_string(),
+                });
+            }
+
+            let has_public_key = profile.public_key_path.exists();
+            if !has_public_key {
+                issues.push(KeyHealthIssue {
+                    severity: "warning".to_string(),
+                    message: "Public key file not found".to_string(),
+                });
+            }
+
+            if !profile.has_passphrase {
+                issues.push(KeyHealthIssue {
+                    severity: "warning".to_string(),
+                    message: "Key has no passphrase protection".to_string(),
+                });
+            }
+
+            let (key_type, bits) = if has_public_key {
+                match compute_fingerprint(&profile.public_key_path) {
+                    Ok(fp) => {
+                        let bits_num = fp.bits.parse::<u32>().unwrap_or(0);
+                        let key_type = fp.key_type.to_uppercase();
+
+                        if key_type.contains("DSA") {
+                            issues.push(KeyHealthIssue {
+                                severity: "critical".to_string(),
+                                message: "DSA keys are deprecated and insecure".to_string(),
+                            });
+                        } else if key_type.contains("RSA") && bits_num < 2048 {
+                            issues.push(KeyHealthIssue {
+                                severity: "critical".to_string(),
+                                message: format!("RSA key too short ({} bits, minimum 2048)", bits_num),
+                            });
+                        } else if key_type.contains("RSA") && bits_num < 4096 {
+                            issues.push(KeyHealthIssue {
+                                severity: "info".to_string(),
+                                message: format!("RSA {} bits — consider 4096 or Ed25519", bits_num),
+                            });
+                        }
+
+                        (key_type, bits_num)
+                    }
+                    Err(_) => {
+                        issues.push(KeyHealthIssue {
+                            severity: "warning".to_string(),
+                            message: "Could not read key fingerprint".to_string(),
+                        });
+                        ("Unknown".to_string(), 0)
+                    }
+                }
+            } else {
+                ("Unknown".to_string(), 0)
+            };
+
+            KeyHealthReport {
+                profile_name: profile.name.clone(),
+                key_type,
+                bits,
+                has_public_key,
+                has_passphrase: profile.has_passphrase,
+                issues,
+            }
+        })
+        .collect();
+
+    Ok(reports)
+}
+
+/// Read the public key content for clipboard copy
+#[tauri::command]
+pub fn read_public_key(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<String, MazeSshError> {
+    ensure_unlocked(&state)?;
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
+    let profile = inner
+        .profiles
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| MazeSshError::ProfileNotFound(id))?;
+
+    if !profile.public_key_path.exists() {
+        return Err(MazeSshError::KeyNotFound(profile.public_key_path.clone()));
+    }
+
+    let content = std::fs::read_to_string(&profile.public_key_path)
+        .map_err(|e| MazeSshError::IoError(e))?;
+    Ok(content.trim().to_string())
+}

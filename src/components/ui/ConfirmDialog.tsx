@@ -70,7 +70,7 @@ export function ConfirmDialog({
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className="bg-card border rounded-xl shadow-2xl shadow-black/30 w-96 overflow-hidden animate-fade-in">
+      <div role="dialog" aria-modal="true" aria-label={title} className="bg-card border rounded-xl shadow-2xl shadow-black/30 w-96 overflow-hidden animate-fade-in">
         {/* Header */}
         <div className="flex items-start gap-3 px-5 pt-5 pb-3">
           <div className={`w-9 h-9 rounded-lg ${config.iconBg} flex items-center justify-center shrink-0 mt-0.5`}>

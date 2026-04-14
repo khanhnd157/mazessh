@@ -74,6 +74,9 @@ export function LockScreen() {
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={isSetup ? "Set up PIN" : "Unlock Maze SSH"}
       className="fixed inset-0 z-100 bg-background flex flex-col"
       onKeyDown={(e) => {
         if (e.key !== "Tab") e.stopPropagation();
@@ -85,6 +88,7 @@ export function LockScreen() {
           type="button"
           onClick={() => appWindow.minimize()}
           title="Minimize"
+          aria-label="Minimize window"
           className="h-full w-11.5 flex items-center justify-center text-muted-foreground/40 hover:text-foreground hover:bg-foreground/5"
         >
           <Minus size={15} strokeWidth={1} />
@@ -93,6 +97,7 @@ export function LockScreen() {
           type="button"
           onClick={() => appWindow.hide()}
           title="Close"
+          aria-label="Close window"
           className="h-full w-11.5 flex items-center justify-center text-muted-foreground/40 hover:bg-[#c42b1c] hover:text-white"
         >
           <X size={15} strokeWidth={1.5} />
@@ -125,6 +130,7 @@ export function LockScreen() {
               onChange={(e) => setPin(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={isSetup ? "Create PIN (4+ chars)" : "PIN"}
+              aria-label={isSetup ? "Create PIN" : "Enter PIN"}
               autoFocus
               className="w-full px-4 py-2.5 rounded-xl bg-secondary border border-border text-center text-sm tracking-[0.2em] focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent placeholder:tracking-normal placeholder:text-muted-foreground/30"
             />
@@ -136,6 +142,7 @@ export function LockScreen() {
                 onChange={(e) => setConfirmPin(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Confirm PIN"
+                aria-label="Confirm PIN"
                 className="w-full px-4 py-2.5 rounded-xl bg-secondary border border-border text-center text-sm tracking-[0.2em] focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent placeholder:tracking-normal placeholder:text-muted-foreground/30"
               />
             )}

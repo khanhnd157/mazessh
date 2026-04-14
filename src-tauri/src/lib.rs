@@ -186,6 +186,8 @@ pub fn run() {
             commands::advanced::export_profiles,
             commands::advanced::import_profiles,
             commands::advanced::get_key_fingerprint,
+            commands::advanced::check_all_keys_health,
+            commands::advanced::read_public_key,
             // Tray
             update_tray_tooltip,
         ])
