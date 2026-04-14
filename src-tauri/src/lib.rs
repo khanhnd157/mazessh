@@ -199,6 +199,8 @@ pub fn run() {
             commands::bridge::restart_bridge_relay,
             commands::bridge::get_distro_bridge_status,
             commands::bridge::set_bridge_enabled,
+            commands::bridge::list_bridge_providers,
+            commands::bridge::set_distro_provider,
             // Tray
             update_tray_tooltip,
         ])

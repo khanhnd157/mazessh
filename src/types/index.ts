@@ -159,6 +159,25 @@ export interface KeyHealthIssue {
 
 // ── WSL Bridge Types ──
 
+export type BridgeProviderType = "windows-open-ssh" | "one-password" | "pageant";
+
+export interface BridgeProvider {
+  type: BridgeProviderType;
+}
+
+export interface ProviderStatus {
+  provider: BridgeProvider;
+  display_name: string;
+  available: boolean;
+  error: string | null;
+}
+
+export interface RelayBinaryStatus {
+  binary: "Npiperelay" | "WslSshPageant";
+  installed: boolean;
+  path: string;
+}
+
 export interface WslDistro {
   name: string;
   state: string;
@@ -171,6 +190,7 @@ export interface DistroBridgeStatus {
   wsl_version: number;
   distro_running: boolean;
   enabled: boolean;
+  provider: BridgeProvider;
   relay_installed: boolean;
   service_active: boolean;
   socket_exists: boolean;
@@ -184,6 +204,8 @@ export interface BridgeOverview {
   wsl_available: boolean;
   npiperelay_installed: boolean;
   windows_agent_running: boolean;
+  provider_statuses: ProviderStatus[];
+  relay_binaries: RelayBinaryStatus[];
   distros: DistroBridgeStatus[];
 }
 

@@ -3,6 +3,7 @@ import type {
   ActivationResult,
   AuditEntry,
   BridgeOverview,
+  BridgeProvider,
   ConfigBackup,
   ConnectionTestResult,
   CreateProfileInput,
@@ -15,6 +16,7 @@ import type {
   KeyHealthReport,
   LockStateResponse,
   ProfileSummary,
+  ProviderStatus,
   RepoMapping,
   RepoMappingSummary,
   SecuritySettings,
@@ -138,4 +140,8 @@ export const commands = {
     invoke<DistroBridgeStatus>("get_distro_bridge_status", { distro }),
   setBridgeEnabled: (distro: string, enabled: boolean) =>
     invoke<void>("set_bridge_enabled", { distro, enabled }),
+  listBridgeProviders: () =>
+    invoke<ProviderStatus[]>("list_bridge_providers"),
+  setDistroProvider: (distro: string, provider: BridgeProvider) =>
+    invoke<void>("set_distro_provider", { distro, provider }),
 };

@@ -2,7 +2,8 @@ use tauri::State;
 
 use crate::error::MazeSshError;
 use crate::models::bridge::*;
-use crate::services::{bridge_service, wsl_service};
+use crate::models::bridge_provider::*;
+use crate::services::{bridge_service, provider_health, wsl_service};
 use crate::state::AppState;
 
 use super::security::ensure_unlocked;
@@ -35,12 +36,13 @@ pub fn bootstrap_bridge(
     ensure_unlocked(&state)?;
     let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
 
-    // Ensure distro entry exists in config
+    // Ensure distro entry exists in config with default provider
     if !config.distros.iter().any(|d| d.distro_name == distro) {
         config.distros.push(DistroBridgeConfig {
             distro_name: distro.clone(),
             enabled: true,
             socket_path: None,
+            provider: BridgeProvider::default(),
         });
     } else {
         // Mark as enabled
@@ -133,6 +135,50 @@ pub fn set_bridge_enabled(
             distro_name: distro,
             enabled: true,
             socket_path: None,
+            provider: BridgeProvider::default(),
+        });
+    }
+
+    bridge_service::save_bridge_config(&config)?;
+    Ok(())
+}
+
+/// List all known providers and their Windows-side availability
+#[tauri::command]
+pub fn list_bridge_providers(
+    state: State<'_, AppState>,
+) -> Result<Vec<ProviderStatus>, MazeSshError> {
+    ensure_unlocked(&state)?;
+    Ok(provider_health::check_all_providers())
+}
+
+/// Change the provider for a specific distro.
+/// Requires teardown first if the bridge is actively running.
+#[tauri::command]
+pub fn set_distro_provider(
+    distro: String,
+    provider: BridgeProvider,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+    let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
+
+    if let Some(d) = config.distros.iter_mut().find(|d| d.distro_name == distro) {
+        if d.provider != provider && d.enabled {
+            // Check if relay is actually installed — if so, require teardown first
+            if wsl_service::wsl_file_exists(&distro, &format!("~/{}", crate::models::bridge::RELAY_SCRIPT_PATH)) {
+                return Err(MazeSshError::BridgeError(
+                    "Teardown the current bridge before switching providers".to_string(),
+                ));
+            }
+        }
+        d.provider = provider;
+    } else {
+        config.distros.push(DistroBridgeConfig {
+            distro_name: distro,
+            enabled: false,
+            socket_path: None,
+            provider,
         });
     }
 
