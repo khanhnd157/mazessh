@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 
 use crate::models::profile::SshProfile;
@@ -6,7 +6,7 @@ use crate::models::repo_mapping::RepoMapping;
 use crate::models::security::SecuritySettings;
 
 pub struct AppState {
-    pub inner: Mutex<AppStateInner>,
+    pub inner: RwLock<AppStateInner>,
     pub security: Mutex<SecurityState>,
 }
 
@@ -30,7 +30,7 @@ impl AppState {
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(AppStateInner {
+            inner: RwLock::new(AppStateInner {
                 profiles: Vec::new(),
                 active_profile_id: None,
                 repo_mappings: Vec::new(),
@@ -55,7 +55,7 @@ impl AppState {
         pin_is_set: bool,
     ) -> Self {
         Self {
-            inner: Mutex::new(AppStateInner {
+            inner: RwLock::new(AppStateInner {
                 profiles,
                 active_profile_id,
                 repo_mappings,

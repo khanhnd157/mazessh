@@ -30,6 +30,6 @@ pub fn save_settings(settings: &SecuritySettings) -> Result<(), MazeSshError> {
         fs::create_dir_all(&dir)?;
     }
     let content = serde_json::to_string_pretty(settings)?;
-    fs::write(settings_path(), content)?;
+    crate::services::profile_service::atomic_write(&settings_path(), &content)?;
     Ok(())
 }

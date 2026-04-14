@@ -8,14 +8,14 @@ use crate::state::AppState;
 #[tauri::command]
 pub fn preview_ssh_config(state: State<'_, AppState>) -> Result<String, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     Ok(config_engine::preview_config(&inner.profiles))
 }
 
 #[tauri::command]
 pub fn write_ssh_config(state: State<'_, AppState>) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     config_engine::write_config(&inner.profiles)
 }
 

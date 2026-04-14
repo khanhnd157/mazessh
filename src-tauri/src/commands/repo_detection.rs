@@ -24,7 +24,7 @@ pub fn check_repo_mapping(
 ) -> Result<Option<RepoMappingSummary>, MazeSshError> {
     ensure_unlocked(&state)?;
     let p = PathBuf::from(&path);
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
 
     let git_root = match repo_detection_service::find_git_root(&p) {
         Some(r) => r,
@@ -64,7 +64,7 @@ pub async fn auto_switch_for_repo(
 
     // Extract everything we need from state
     let (profile, mapping_scope, git_root, key_path) = {
-        let inner = state.inner.lock().unwrap();
+        let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
 
         let git_root = match repo_detection_service::find_git_root(&p) {
             Some(r) => r,
@@ -88,7 +88,7 @@ pub async fn auto_switch_for_repo(
 
     // Activate the profile (same as manual activation)
     {
-        let mut inner = state.inner.lock().unwrap();
+        let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
         inner.active_profile_id = Some(profile.id.clone());
     }
 

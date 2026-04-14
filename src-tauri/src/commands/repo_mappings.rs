@@ -23,7 +23,7 @@ fn build_summary(mapping: &RepoMapping, profile_name: String) -> RepoMappingSumm
 #[tauri::command]
 pub fn get_repo_mappings(state: State<'_, AppState>) -> Result<Vec<RepoMappingSummary>, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let summaries = inner
         .repo_mappings
         .iter()
@@ -46,7 +46,7 @@ pub fn get_repo_mappings_for_profile(
     state: State<'_, AppState>,
 ) -> Result<Vec<RepoMappingSummary>, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let profile_name = inner
         .profiles
         .iter()
@@ -83,7 +83,7 @@ pub fn create_repo_mapping(
     let git_root = repo_detection_service::find_git_root(&repo_path)
         .ok_or_else(|| MazeSshError::NotAGitRepo(repo_path.clone()))?;
 
-    let mut inner = state.inner.lock().unwrap();
+    let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
 
     // Validate profile exists
     if !inner.profiles.iter().any(|p| p.id == input.profile_id) {
@@ -126,7 +126,7 @@ pub fn create_repo_mapping(
 #[tauri::command]
 pub fn delete_repo_mapping(id: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let mut inner = state.inner.lock().unwrap();
+    let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
     let idx = inner
         .repo_mappings
         .iter()
@@ -145,7 +145,7 @@ pub fn update_repo_mapping_scope(
     state: State<'_, AppState>,
 ) -> Result<RepoMapping, MazeSshError> {
     ensure_unlocked(&state)?;
-    let mut inner = state.inner.lock().unwrap();
+    let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
     let mapping = inner
         .repo_mappings
         .iter_mut()

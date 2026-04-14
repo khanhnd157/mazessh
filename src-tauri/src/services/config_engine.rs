@@ -60,7 +60,7 @@ pub fn write_config(profiles: &[SshProfile]) -> Result<(), MazeSshError> {
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&config_path, updated)?;
+    crate::services::profile_service::atomic_write(&config_path, &updated)?;
     Ok(())
 }
 

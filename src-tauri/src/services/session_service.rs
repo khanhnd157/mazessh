@@ -71,8 +71,7 @@ pub fn check_agent_expiry(app: &tauri::AppHandle) {
         drop(security);
 
         // Clear active profile state first
-        {
-            let mut inner = state.inner.lock().unwrap();
+        if let Ok(mut inner) = state.inner.write() {
             inner.active_profile_id = None;
         }
 
