@@ -29,6 +29,6 @@ pub fn save_mappings(mappings: &[RepoMapping]) -> Result<(), MazeSshError> {
         fs::create_dir_all(&dir)?;
     }
     let content = serde_json::to_string_pretty(mappings)?;
-    fs::write(mappings_path(), content)?;
+    crate::services::profile_service::atomic_write(&mappings_path(), &content)?;
     Ok(())
 }

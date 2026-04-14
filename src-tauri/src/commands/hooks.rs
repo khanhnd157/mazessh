@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
-use crate::services::repo_detection_service;
+use crate::services::{repo_detection_service, validation};
 use crate::state::AppState;
 
 /// Generate a pre-push git hook script that validates the SSH identity
@@ -19,7 +19,7 @@ pub fn generate_git_hook(
     let git_root = repo_detection_service::find_git_root(&p)
         .ok_or_else(|| MazeSshError::NotAGitRepo(p))?;
 
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let mapping = repo_detection_service::lookup_mapping(&git_root, &inner.repo_mappings);
 
     let (profile_name, email) = match mapping {
@@ -37,19 +37,22 @@ pub fn generate_git_hook(
         }
     };
 
+    let safe_email = validation::shell_escape(&email);
+    let safe_profile_name = validation::shell_escape(&profile_name);
+
     let hook_content = format!(
         r#"#!/bin/sh
 # Maze SSH — pre-push identity validation hook
-# Profile: {profile_name}
-# Expected email: {email}
+# Profile: {safe_profile_name}
+# Expected email: {safe_email}
 
 CURRENT_EMAIL=$(git config user.email)
-EXPECTED_EMAIL="{email}"
+EXPECTED_EMAIL='{safe_email}'
 
 if [ "$CURRENT_EMAIL" != "$EXPECTED_EMAIL" ]; then
   echo ""
   echo "  [Maze SSH] Identity mismatch!"
-  echo "  Expected: $EXPECTED_EMAIL ({profile_name})"
+  echo "  Expected: $EXPECTED_EMAIL ({safe_profile_name})"
   echo "  Current:  $CURRENT_EMAIL"
   echo ""
   echo "  Run: maze-ssh switch to fix, or set git config user.email"
@@ -57,8 +60,8 @@ if [ "$CURRENT_EMAIL" != "$EXPECTED_EMAIL" ]; then
   exit 1
 fi
 "#,
-        profile_name = profile_name,
-        email = email,
+        safe_profile_name = safe_profile_name,
+        safe_email = safe_email,
     );
 
     // Write to .git/hooks/pre-push

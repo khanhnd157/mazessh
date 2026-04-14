@@ -30,13 +30,13 @@ pub async fn activate_profile(
 
     // Mark agent activation time for session timeout
     {
-        let mut security = state.security.lock().unwrap();
+        let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
         security.agent_activated_at = Some(std::time::Instant::now());
     }
 
     // Step 1: Quick state update (instant)
     let (profile, git_ssh_command, key_path) = {
-        let mut inner = state.inner.lock().unwrap();
+        let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
         let profile = inner
             .profiles
             .iter()
@@ -116,13 +116,13 @@ pub async fn deactivate_profile(
 
     // Clear agent activation time
     {
-        let mut security = state.security.lock().unwrap();
+        let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
         security.agent_activated_at = None;
     }
 
     // Quick state update
     {
-        let mut inner = state.inner.lock().unwrap();
+        let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
         inner.active_profile_id = None;
     }
 
@@ -150,7 +150,7 @@ pub async fn deactivate_profile(
 pub fn get_active_profile(
     state: State<'_, AppState>,
 ) -> Result<Option<ProfileSummary>, MazeSshError> {
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     if let Some(active_id) = &inner.active_profile_id {
         let profile = inner.profiles.iter().find(|p| p.id == *active_id);
         Ok(profile.map(|p| ProfileSummary::from_profile(p, &inner.active_profile_id)))

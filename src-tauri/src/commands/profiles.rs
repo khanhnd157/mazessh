@@ -6,13 +6,13 @@ use crate::models::profile::{
     CreateProfileInput, ProfileSummary, SshProfile, UpdateProfileInput,
 };
 use crate::commands::security::ensure_unlocked;
-use crate::services::{profile_service, repo_mapping_service, security};
+use crate::services::{profile_service, repo_mapping_service, security, validation};
 use crate::state::AppState;
 
 #[tauri::command]
 pub fn get_profiles(state: State<'_, AppState>) -> Result<Vec<ProfileSummary>, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let summaries = inner
         .profiles
         .iter()
@@ -24,7 +24,7 @@ pub fn get_profiles(state: State<'_, AppState>) -> Result<Vec<ProfileSummary>, M
 #[tauri::command]
 pub fn get_profile(id: String, state: State<'_, AppState>) -> Result<SshProfile, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     inner
         .profiles
         .iter()
@@ -39,6 +39,8 @@ pub fn create_profile(
     state: State<'_, AppState>,
 ) -> Result<SshProfile, MazeSshError> {
     ensure_unlocked(&state)?;
+    validation::validate_profile_input(&input)?;
+
     let private_key_path = PathBuf::from(&input.private_key_path);
     if !private_key_path.exists() {
         return Err(MazeSshError::KeyNotFound(private_key_path));
@@ -64,7 +66,7 @@ pub fn create_profile(
         updated_at: now,
     };
 
-    let mut inner = state.inner.lock().unwrap();
+    let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
     inner.profiles.push(profile.clone());
     profile_service::save_profiles(&inner.profiles)?;
 
@@ -78,7 +80,7 @@ pub fn update_profile(
     state: State<'_, AppState>,
 ) -> Result<SshProfile, MazeSshError> {
     ensure_unlocked(&state)?;
-    let mut inner = state.inner.lock().unwrap();
+    let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
     let profile = inner
         .profiles
         .iter_mut()
@@ -120,7 +122,7 @@ pub fn update_profile(
 #[tauri::command]
 pub fn delete_profile(id: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let mut inner = state.inner.lock().unwrap();
+    let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
     let idx = inner
         .profiles
         .iter()

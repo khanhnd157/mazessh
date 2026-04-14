@@ -44,6 +44,12 @@ pub enum MazeSshError {
 
     #[error("PIN is not configured")]
     PinNotSet,
+
+    #[error("Internal state error")]
+    StateLockError,
+
+    #[error("Validation error: {0}")]
+    ValidationError(String),
 }
 
 impl Serialize for MazeSshError {

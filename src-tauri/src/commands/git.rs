@@ -19,7 +19,7 @@ pub fn get_git_ssh_command(
     state: State<'_, AppState>,
 ) -> Result<String, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let profile = inner
         .profiles
         .iter()
@@ -35,7 +35,7 @@ pub async fn test_ssh_connection(
 ) -> Result<ConnectionTestResult, MazeSshError> {
     ensure_unlocked(&state)?;
     let (profile_name, hostname, key_path, port) = {
-        let inner = state.inner.lock().unwrap();
+        let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
         let profile = inner
             .profiles
             .iter()

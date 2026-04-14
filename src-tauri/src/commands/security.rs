@@ -2,14 +2,14 @@ use tauri::{Emitter, State};
 
 use crate::error::MazeSshError;
 use crate::models::security::{AuditEntry, LockStateResponse, SecuritySettings};
-use crate::services::{audit_service, lock_service, session_service, settings_service, ssh_engine};
+use crate::services::{audit_service, lock_service, session_service, settings_service, ssh_engine, validation};
 use crate::state::AppState;
 
 /// Helper: lock the app (used by command and by lib.rs on_window_event)
 pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
     use tauri::Manager;
     let state = app.state::<AppState>();
-    let mut security = state.security.lock().unwrap();
+    let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     if security.is_locked {
         return Ok(());
     }
@@ -47,7 +47,7 @@ pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
 
 /// Helper: check if app is unlocked (used as guard in other commands)
 pub fn ensure_unlocked(state: &AppState) -> Result<(), MazeSshError> {
-    let security = state.security.lock().unwrap();
+    let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     if security.is_locked {
         return Err(MazeSshError::AppLocked);
     }
@@ -59,7 +59,9 @@ pub fn ensure_unlocked(state: &AppState) -> Result<(), MazeSshError> {
 
 #[tauri::command]
 pub fn setup_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
-    let security = state.security.lock().unwrap();
+    validation::validate_pin(&pin)?;
+
+    let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     if security.pin_is_set {
         return Err(MazeSshError::SecurityError("PIN already configured".to_string()));
     }
@@ -67,7 +69,7 @@ pub fn setup_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSshE
 
     lock_service::set_pin(&pin)?;
 
-    let mut security = state.security.lock().unwrap();
+    let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     security.pin_is_set = true;
 
     audit_service::append_log(&AuditEntry {
@@ -87,7 +89,7 @@ const LOCKOUT_SECONDS: u64 = 60;
 pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeSshError> {
     // Rate limiting: check if locked out from too many attempts
     {
-        let security = state.security.lock().unwrap();
+        let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
         if security.failed_pin_attempts >= MAX_PIN_ATTEMPTS {
             if let Some(last) = security.last_failed_attempt {
                 let elapsed = last.elapsed().as_secs();
@@ -104,7 +106,7 @@ pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeS
 
     let valid = lock_service::verify_pin(&pin)?;
     if valid {
-        let mut security = state.security.lock().unwrap();
+        let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
         security.is_locked = false;
         security.last_activity = std::time::Instant::now();
         security.failed_pin_attempts = 0;
@@ -117,7 +119,7 @@ pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeS
             result: "success".to_string(),
         });
     } else {
-        let mut security = state.security.lock().unwrap();
+        let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
         security.failed_pin_attempts += 1;
         security.last_failed_attempt = Some(std::time::Instant::now());
 
@@ -139,6 +141,8 @@ pub fn change_pin(
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
+
+    validation::validate_pin(&new_pin)?;
 
     let valid = lock_service::verify_pin(&old_pin)?;
     if !valid {
@@ -168,7 +172,7 @@ pub fn remove_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSsh
 
     lock_service::remove_pin()?;
 
-    let mut security = state.security.lock().unwrap();
+    let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     security.pin_is_set = false;
     security.is_locked = false;
 
@@ -184,7 +188,7 @@ pub fn remove_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSsh
 
 #[tauri::command]
 pub fn lock_app(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(), MazeSshError> {
-    let security = state.security.lock().unwrap();
+    let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     if !security.pin_is_set {
         return Err(MazeSshError::PinNotSet);
     }
@@ -194,7 +198,7 @@ pub fn lock_app(state: State<'_, AppState>, app: tauri::AppHandle) -> Result<(),
 
 #[tauri::command]
 pub fn get_lock_state(state: State<'_, AppState>) -> Result<LockStateResponse, MazeSshError> {
-    let security = state.security.lock().unwrap();
+    let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     Ok(LockStateResponse {
         is_locked: security.is_locked,
         pin_is_set: security.pin_is_set,
@@ -203,7 +207,7 @@ pub fn get_lock_state(state: State<'_, AppState>) -> Result<LockStateResponse, M
 
 #[tauri::command]
 pub fn get_security_settings(state: State<'_, AppState>) -> Result<SecuritySettings, MazeSshError> {
-    let security = state.security.lock().unwrap();
+    let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     Ok(security.settings.clone())
 }
 
@@ -215,7 +219,7 @@ pub fn update_security_settings(
     ensure_unlocked(&state)?;
     settings_service::save_settings(&settings)?;
 
-    let mut security = state.security.lock().unwrap();
+    let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     security.settings = settings;
 
     audit_service::append_log(&AuditEntry {

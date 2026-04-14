@@ -18,7 +18,7 @@ static FINGERPRINT_CACHE: std::sync::LazyLock<Mutex<HashMap<String, KeyFingerpri
 #[tauri::command]
 pub fn export_profiles(state: State<'_, AppState>) -> Result<String, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let json = serde_json::to_string_pretty(&inner.profiles)?;
     Ok(json)
 }
@@ -32,7 +32,7 @@ pub fn import_profiles(
     ensure_unlocked(&state)?;
 
     let imported: Vec<SshProfile> = serde_json::from_str(&json)?;
-    let mut inner = state.inner.lock().unwrap();
+    let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
     let mut count = 0u32;
 
     for mut profile in imported {
@@ -58,7 +58,7 @@ pub fn get_key_fingerprint(
     state: State<'_, AppState>,
 ) -> Result<KeyFingerprint, MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let profile = inner
         .profiles
         .iter()
@@ -69,7 +69,7 @@ pub fn get_key_fingerprint(
 
     // Check cache first
     {
-        let cache = FINGERPRINT_CACHE.lock().unwrap();
+        let cache = FINGERPRINT_CACHE.lock().map_err(|_| MazeSshError::StateLockError)?;
         if let Some(cached) = cache.get(&pub_path_str) {
             return Ok(cached.clone());
         }
@@ -79,7 +79,7 @@ pub fn get_key_fingerprint(
 
     // Store in cache
     {
-        let mut cache = FINGERPRINT_CACHE.lock().unwrap();
+        let mut cache = FINGERPRINT_CACHE.lock().map_err(|_| MazeSshError::StateLockError)?;
         cache.insert(pub_path_str, fingerprint.clone());
     }
 

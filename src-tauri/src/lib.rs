@@ -54,16 +54,19 @@ pub fn run() {
             // Set initial tooltip
             let initial_tooltip = {
                 let state = app.state::<AppState>();
-                let inner = state.inner.lock().unwrap();
-                match &inner.active_profile_id {
-                    Some(id) => inner
-                        .profiles
-                        .iter()
-                        .find(|p| p.id == *id)
-                        .map(|p| format!("Maze SSH - {}", p.name))
-                        .unwrap_or_else(|| "Maze SSH - No active profile".to_string()),
-                    None => "Maze SSH - No active profile".to_string(),
-                }
+                let tooltip = match state.inner.read() {
+                    Ok(inner) => match &inner.active_profile_id {
+                        Some(id) => inner
+                            .profiles
+                            .iter()
+                            .find(|p| p.id == *id)
+                            .map(|p| format!("Maze SSH - {}", p.name))
+                            .unwrap_or_else(|| "Maze SSH - No active profile".to_string()),
+                        None => "Maze SSH - No active profile".to_string(),
+                    },
+                    Err(_) => "Maze SSH".to_string(),
+                };
+                tooltip
             };
 
             let _tray = TrayIconBuilder::with_id("main-tray")
@@ -117,12 +120,11 @@ pub fn run() {
                 // Lock on minimize if setting enabled
                 let app = window.app_handle();
                 let state = app.state::<AppState>();
-                let security = state.security.lock().unwrap();
-                if security.settings.lock_on_minimize && security.pin_is_set && !security.is_locked {
-                    drop(security);
-                    let _ = commands::security::do_lock(app);
-                } else {
-                    drop(security);
+                if let Ok(security) = state.security.lock() {
+                    if security.settings.lock_on_minimize && security.pin_is_set && !security.is_locked {
+                        drop(security);
+                        let _ = commands::security::do_lock(app);
+                    }
                 }
                 let _ = window.hide();
                 api.prevent_close();

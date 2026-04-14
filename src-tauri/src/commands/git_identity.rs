@@ -25,7 +25,7 @@ pub fn sync_git_identity(
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let inner = state.inner.lock().unwrap();
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     let profile = inner
         .profiles
         .iter()

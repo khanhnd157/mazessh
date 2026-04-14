@@ -34,7 +34,16 @@ pub fn load_profiles() -> Result<Vec<SshProfile>, MazeSshError> {
 pub fn save_profiles(profiles: &[SshProfile]) -> Result<(), MazeSshError> {
     ensure_data_dir()?;
     let content = serde_json::to_string_pretty(profiles)?;
-    fs::write(profiles_path(), content)?;
+    atomic_write(&profiles_path(), &content)?;
+    Ok(())
+}
+
+/// Write content to a file atomically: write to a temp file, then rename.
+/// This prevents corruption if the process crashes mid-write.
+pub fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), std::io::Error> {
+    let tmp_path = path.with_extension("tmp");
+    fs::write(&tmp_path, content)?;
+    fs::rename(&tmp_path, path)?;
     Ok(())
 }
 
