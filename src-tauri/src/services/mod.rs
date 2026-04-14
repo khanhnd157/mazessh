@@ -1,5 +1,6 @@
 pub mod audit_service;
 pub mod bridge_service;
+pub mod relay_bundler;
 pub mod config_engine;
 pub mod git_identity_service;
 pub mod key_scanner;

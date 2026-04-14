@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ActivationResult,
   AuditEntry,
+  BinaryVersion,
   BridgeOverview,
   BridgeProvider,
   ConfigBackup,
@@ -9,6 +10,7 @@ import type {
   CreateProfileInput,
   CreateRepoMappingInput,
   DetectedKey,
+  DiagnosticsResult,
   DistroBridgeStatus,
   GitConfigScope,
   GitIdentityInfo,
@@ -17,6 +19,7 @@ import type {
   LockStateResponse,
   ProfileSummary,
   ProviderStatus,
+  RelayMode,
   RepoMapping,
   RepoMappingSummary,
   SecuritySettings,
@@ -126,8 +129,8 @@ export const commands = {
     invoke<BridgeOverview>("get_bridge_overview"),
   listWslDistros: () =>
     invoke<WslDistro[]>("list_wsl_distros"),
-  bootstrapBridge: (distro: string) =>
-    invoke<DistroBridgeStatus>("bootstrap_bridge", { distro }),
+  bootstrapBridge: (distro: string, relayMode?: RelayMode) =>
+    invoke<DistroBridgeStatus>("bootstrap_bridge", { distro, relayMode: relayMode ?? null }),
   teardownBridge: (distro: string) =>
     invoke<void>("teardown_bridge", { distro }),
   startBridgeRelay: (distro: string) =>
@@ -148,4 +151,14 @@ export const commands = {
     invoke<BridgeProvider | null>("get_recommended_provider"),
   setAgentForwarding: (distro: string, enabled: boolean) =>
     invoke<void>("set_agent_forwarding", { distro, enabled }),
+
+  // Bridge Phase 4
+  runBridgeDiagnostics: (distro: string) =>
+    invoke<DiagnosticsResult>("run_bridge_diagnostics", { distro }),
+  getRelayLogs: (distro: string, lines: number) =>
+    invoke<string>("get_relay_logs", { distro, lines }),
+  getRelayBinaryVersions: () =>
+    invoke<BinaryVersion>("get_relay_binary_versions"),
+  downloadRelayBinary: (binary: string) =>
+    invoke<void>("download_relay_binary", { binary }),
 };

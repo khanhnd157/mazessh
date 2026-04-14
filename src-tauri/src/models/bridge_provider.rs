@@ -108,6 +108,56 @@ impl RelayBinary {
     pub fn all() -> &'static [RelayBinary] {
         &[RelayBinary::Npiperelay, RelayBinary::WslSshPageant]
     }
+
+    /// GitHub repo owner/name for downloading from releases
+    pub fn github_repo(&self) -> &'static str {
+        match self {
+            RelayBinary::Npiperelay => "jstarks/npiperelay",
+            RelayBinary::WslSshPageant => "benpye/wsl-ssh-pageant",
+        }
+    }
+
+    /// Exact filename to look for in GitHub release assets
+    pub fn asset_name(&self) -> &'static str {
+        self.filename()
+    }
+
+    /// Key used in BinaryVersion JSON
+    pub fn version_key(&self) -> &'static str {
+        match self {
+            RelayBinary::Npiperelay => "npiperelay",
+            RelayBinary::WslSshPageant => "wsl_ssh_pageant",
+        }
+    }
+
+    /// Parse from version_key string
+    pub fn from_key(key: &str) -> Option<Self> {
+        match key {
+            "npiperelay" => Some(RelayBinary::Npiperelay),
+            "wsl-ssh-pageant" | "wsl_ssh_pageant" => Some(RelayBinary::WslSshPageant),
+            _ => None,
+        }
+    }
+}
+
+/// Installed version record, persisted at ~/.maze-ssh/bin/bin-version.json
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BinaryVersion {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub npiperelay: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wsl_ssh_pageant: Option<String>,
+}
+
+/// Progress event payload emitted during a binary download
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadProgress {
+    /// "npiperelay" | "wsl-ssh-pageant"
+    pub binary: String,
+    /// 0–100
+    pub percent: u8,
+    /// "downloading" | "done" | "error"
+    pub status: String,
 }
 
 /// Health/availability status for a specific provider on the Windows side

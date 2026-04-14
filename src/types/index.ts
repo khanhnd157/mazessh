@@ -164,6 +164,8 @@ export interface KeyHealthIssue {
 
 export type BridgeProviderType = "windows-open-ssh" | "one-password" | "pageant" | "custom";
 
+export type RelayMode = "systemd" | "daemon";
+
 export interface BridgeProvider {
   type: BridgeProviderType;
   pipe_path?: string;
@@ -202,7 +204,32 @@ export interface DistroBridgeStatus {
   allow_agent_forwarding: boolean;
   socat_installed: boolean;
   systemd_available: boolean;
+  relay_mode: RelayMode;
   error: string | null;
+}
+
+export interface DiagnosticsStep {
+  name: string;
+  passed: boolean;
+  detail: string | null;
+}
+
+export interface DiagnosticsResult {
+  distro: string;
+  steps: DiagnosticsStep[];
+  keys_visible: string[];
+  suggestions: string[];
+}
+
+export interface BinaryVersion {
+  npiperelay?: string;
+  wsl_ssh_pageant?: string;
+}
+
+export interface DownloadProgress {
+  binary: string;
+  percent: number;
+  status: "downloading" | "done" | "error";
 }
 
 export interface BridgeOverview {

@@ -7,6 +7,15 @@ use crate::services::profile_service;
 use crate::services::provider_health;
 use crate::services::wsl_service;
 
+fn resolve_relay_mode(config: &BridgeConfig, distro: &str) -> RelayMode {
+    config
+        .distros
+        .iter()
+        .find(|d| d.distro_name == distro)
+        .map(|d| d.relay_mode.clone())
+        .unwrap_or_default()
+}
+
 // ── Config persistence ──
 
 fn bridge_config_path() -> PathBuf {
@@ -176,13 +185,29 @@ WantedBy=default.target
     )
 }
 
-fn generate_bashrc_block(socket_path: &str) -> String {
-    format!(
-        "{begin}\nexport SSH_AUTH_SOCK=\"{socket_path}\"\n{end}\n",
-        begin = BRIDGE_MARKER_BEGIN,
-        socket_path = socket_path,
-        end = BRIDGE_MARKER_END,
-    )
+fn generate_bashrc_block(socket_path: &str, relay_mode: &RelayMode) -> String {
+    match relay_mode {
+        RelayMode::Systemd => format!(
+            "{begin}\nexport SSH_AUTH_SOCK=\"{socket_path}\"\n{end}\n",
+            begin = BRIDGE_MARKER_BEGIN,
+            socket_path = socket_path,
+            end = BRIDGE_MARKER_END,
+        ),
+        RelayMode::Daemon => format!(
+            r#"{begin}
+export MAZE_SSH_SOCKET="{socket_path}"
+if [ ! -S "$MAZE_SSH_SOCKET" ]; then
+    nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &
+    sleep 0.5
+fi
+export SSH_AUTH_SOCK="$MAZE_SSH_SOCKET"
+{end}
+"#,
+            begin = BRIDGE_MARKER_BEGIN,
+            socket_path = socket_path,
+            end = BRIDGE_MARKER_END,
+        ),
+    }
 }
 
 /// Bootstrap the bridge relay into a WSL distro.
@@ -192,6 +217,7 @@ pub fn bootstrap_distro(
 ) -> Result<DistroBridgeStatus, MazeSshError> {
     let provider = resolve_provider(config, distro);
     let relay_binary = provider.relay_binary();
+    let relay_mode = resolve_relay_mode(config, distro);
 
     // 1. Verify relay binary exists
     if !is_relay_binary_installed(relay_binary) {
@@ -238,44 +264,65 @@ pub fn bootstrap_distro(
         ));
     }
 
-    // 5. Check systemd
-    if !wsl_service::has_systemd(distro) {
-        return Err(MazeSshError::BridgeError(
-            "systemd is required but not available. Add [boot]\\nsystemd=true to /etc/wsl.conf and restart WSL.".to_string(),
-        ));
-    }
-
     let socket_path = resolve_socket_path(config, distro);
     let relay_wsl = relay_binary_wsl_path(relay_binary);
 
-    // 6. Create directories
-    let _ = wsl_service::run_in_wsl(distro, &["mkdir", "-p", "~/.local/bin", "~/.config/systemd/user"]);
+    match relay_mode {
+        RelayMode::Systemd => {
+            // 5. Check systemd
+            if !wsl_service::has_systemd(distro) {
+                return Err(MazeSshError::BridgeError(
+                    "systemd is required but not available. Add [boot]\\nsystemd=true to /etc/wsl.conf and restart WSL.".to_string(),
+                ));
+            }
 
-    // 7. Write relay script
-    let relay_content = generate_relay_script(&provider, &relay_wsl, &socket_path);
-    wsl_service::wsl_write_file(distro, &format!("~/{}", RELAY_SCRIPT_PATH), &relay_content)?;
-    let _ = wsl_service::run_in_wsl(distro, &["chmod", "+x", &format!("~/{}", RELAY_SCRIPT_PATH)]);
+            // 6. Create directories
+            let _ = wsl_service::run_in_wsl(distro, &["mkdir", "-p", "~/.local/bin", "~/.config/systemd/user"]);
 
-    // 8. Write systemd unit
-    let unit_content = generate_systemd_unit(&provider, &socket_path);
-    wsl_service::wsl_write_file(distro, &format!("~/{}", SYSTEMD_UNIT_PATH), &unit_content)?;
+            // 7. Write relay script
+            let relay_content = generate_relay_script(&provider, &relay_wsl, &socket_path);
+            wsl_service::wsl_write_file(distro, &format!("~/{}", RELAY_SCRIPT_PATH), &relay_content)?;
+            let _ = wsl_service::run_in_wsl(distro, &["chmod", "+x", &format!("~/{}", RELAY_SCRIPT_PATH)]);
 
-    // 9. Reload + enable + start
-    let _ = wsl_service::run_in_wsl(distro, &["systemctl", "--user", "daemon-reload"]);
-    let enable_result = wsl_service::run_in_wsl(
-        distro,
-        &["systemctl", "--user", "enable", "--now", "maze-ssh-relay.service"],
-    )?;
+            // 8. Write systemd unit
+            let unit_content = generate_systemd_unit(&provider, &socket_path);
+            wsl_service::wsl_write_file(distro, &format!("~/{}", SYSTEMD_UNIT_PATH), &unit_content)?;
 
-    if !enable_result.success {
-        return Err(MazeSshError::BridgeError(format!(
-            "Failed to enable/start service: {}",
-            enable_result.stderr.trim()
-        )));
+            // 9. Reload + enable + start
+            let _ = wsl_service::run_in_wsl(distro, &["systemctl", "--user", "daemon-reload"]);
+            let enable_result = wsl_service::run_in_wsl(
+                distro,
+                &["systemctl", "--user", "enable", "--now", "maze-ssh-relay.service"],
+            )?;
+
+            if !enable_result.success {
+                return Err(MazeSshError::BridgeError(format!(
+                    "Failed to enable/start service: {}",
+                    enable_result.stderr.trim()
+                )));
+            }
+        }
+        RelayMode::Daemon => {
+            // No systemd required — relay starts from .bashrc
+
+            // 5. Create only ~/.local/bin
+            let _ = wsl_service::run_in_wsl(distro, &["mkdir", "-p", "~/.local/bin"]);
+
+            // 6. Write relay script
+            let relay_content = generate_relay_script(&provider, &relay_wsl, &socket_path);
+            wsl_service::wsl_write_file(distro, &format!("~/{}", RELAY_SCRIPT_PATH), &relay_content)?;
+            let _ = wsl_service::run_in_wsl(distro, &["chmod", "+x", &format!("~/{}", RELAY_SCRIPT_PATH)]);
+
+            // 7. Launch relay immediately in background
+            let _ = wsl_service::run_in_wsl(
+                distro,
+                &["bash", "-c", &format!("nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null & sleep 0.5")],
+            );
+        }
     }
 
-    // 10. Configure SSH_AUTH_SOCK in bashrc (idempotent)
-    configure_shell_env(distro, &socket_path)?;
+    // Configure SSH_AUTH_SOCK in bashrc (idempotent)
+    configure_shell_env(distro, &socket_path, &relay_mode)?;
 
     // Brief pause for service to create socket
     std::thread::sleep(std::time::Duration::from_millis(500));
@@ -284,61 +331,98 @@ pub fn bootstrap_distro(
 }
 
 /// Remove the bridge from a WSL distro
-pub fn teardown_distro(distro: &str) -> Result<(), MazeSshError> {
-    let _ = wsl_service::run_in_wsl(
-        distro,
-        &["systemctl", "--user", "disable", "--now", "maze-ssh-relay.service"],
-    );
+pub fn teardown_distro(distro: &str, config: &BridgeConfig) -> Result<(), MazeSshError> {
+    let relay_mode = resolve_relay_mode(config, distro);
+    match relay_mode {
+        RelayMode::Systemd => {
+            let _ = wsl_service::run_in_wsl(
+                distro,
+                &["systemctl", "--user", "disable", "--now", "maze-ssh-relay.service"],
+            );
+            let _ = wsl_service::run_in_wsl(distro, &["systemctl", "--user", "daemon-reload"]);
+        }
+        RelayMode::Daemon => {
+            // Kill the background relay process if running
+            let _ = wsl_service::run_in_wsl(
+                distro,
+                &["bash", "-c", "pkill -f maze-ssh-relay.sh || true"],
+            );
+        }
+    }
     let _ = wsl_service::run_in_wsl(
         distro,
         &["rm", "-f", &format!("~/{}", RELAY_SCRIPT_PATH), &format!("~/{}", SYSTEMD_UNIT_PATH)],
     );
-    let _ = wsl_service::run_in_wsl(distro, &["systemctl", "--user", "daemon-reload"]);
     remove_shell_env(distro)?;
     Ok(())
 }
 
 // ── Service lifecycle ──
 
-pub fn start_relay(distro: &str) -> Result<(), MazeSshError> {
-    let result = wsl_service::run_in_wsl(
-        distro,
-        &["systemctl", "--user", "start", "maze-ssh-relay.service"],
-    )?;
-    if !result.success {
-        return Err(MazeSshError::BridgeError(format!(
-            "Failed to start relay: {}",
-            result.stderr.trim()
-        )));
+pub fn start_relay(distro: &str, relay_mode: &RelayMode) -> Result<(), MazeSshError> {
+    match relay_mode {
+        RelayMode::Systemd => {
+            let result = wsl_service::run_in_wsl(
+                distro,
+                &["systemctl", "--user", "start", "maze-ssh-relay.service"],
+            )?;
+            if !result.success {
+                return Err(MazeSshError::BridgeError(format!(
+                    "Failed to start relay: {}",
+                    result.stderr.trim()
+                )));
+            }
+        }
+        RelayMode::Daemon => {
+            // Kill any stale process first, then launch fresh
+            let _ = wsl_service::run_in_wsl(
+                distro,
+                &["bash", "-c", "pkill -f maze-ssh-relay.sh || true"],
+            );
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let result = wsl_service::run_in_wsl(
+                distro,
+                &["bash", "-c", "nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &"],
+            )?;
+            if !result.success {
+                return Err(MazeSshError::BridgeError(format!(
+                    "Failed to start relay daemon: {}",
+                    result.stderr.trim()
+                )));
+            }
+        }
     }
     Ok(())
 }
 
-pub fn stop_relay(distro: &str) -> Result<(), MazeSshError> {
-    let result = wsl_service::run_in_wsl(
-        distro,
-        &["systemctl", "--user", "stop", "maze-ssh-relay.service"],
-    )?;
-    if !result.success {
-        return Err(MazeSshError::BridgeError(format!(
-            "Failed to stop relay: {}",
-            result.stderr.trim()
-        )));
+pub fn stop_relay(distro: &str, relay_mode: &RelayMode) -> Result<(), MazeSshError> {
+    match relay_mode {
+        RelayMode::Systemd => {
+            let result = wsl_service::run_in_wsl(
+                distro,
+                &["systemctl", "--user", "stop", "maze-ssh-relay.service"],
+            )?;
+            if !result.success {
+                return Err(MazeSshError::BridgeError(format!(
+                    "Failed to stop relay: {}",
+                    result.stderr.trim()
+                )));
+            }
+        }
+        RelayMode::Daemon => {
+            let _ = wsl_service::run_in_wsl(
+                distro,
+                &["bash", "-c", "pkill -f maze-ssh-relay.sh || true"],
+            );
+        }
     }
     Ok(())
 }
 
-pub fn restart_relay(distro: &str) -> Result<(), MazeSshError> {
-    let result = wsl_service::run_in_wsl(
-        distro,
-        &["systemctl", "--user", "restart", "maze-ssh-relay.service"],
-    )?;
-    if !result.success {
-        return Err(MazeSshError::BridgeError(format!(
-            "Failed to restart relay: {}",
-            result.stderr.trim()
-        )));
-    }
+pub fn restart_relay(distro: &str, relay_mode: &RelayMode) -> Result<(), MazeSshError> {
+    stop_relay(distro, relay_mode)?;
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    start_relay(distro, relay_mode)?;
     Ok(())
 }
 
@@ -348,6 +432,7 @@ pub fn restart_relay(distro: &str) -> Result<(), MazeSshError> {
 pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeStatus {
     let socket_path = resolve_socket_path(config, distro);
     let provider = resolve_provider(config, distro);
+    let relay_mode = resolve_relay_mode(config, distro);
 
     let (wsl_version, distro_running) = match wsl_service::list_distros() {
         Ok(distros) => match distros.iter().find(|d| d.name == distro) {
@@ -380,6 +465,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
             allow_agent_forwarding,
             socat_installed: false,
             systemd_available: false,
+            relay_mode,
             error: Some("Distro is not running".to_string()),
         };
     }
@@ -387,15 +473,28 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
     let socat_installed = wsl_service::has_socat(distro);
     let systemd_available = wsl_service::has_systemd(distro);
 
-    let relay_installed = wsl_service::wsl_file_exists(distro, &format!("~/{}", RELAY_SCRIPT_PATH))
-        && wsl_service::wsl_file_exists(distro, &format!("~/{}", SYSTEMD_UNIT_PATH));
+    // relay_installed: script exists + (systemd unit exists OR daemon mode)
+    let script_installed = wsl_service::wsl_file_exists(distro, &format!("~/{}", RELAY_SCRIPT_PATH));
+    let relay_installed = match relay_mode {
+        RelayMode::Systemd => script_installed && wsl_service::wsl_file_exists(distro, &format!("~/{}", SYSTEMD_UNIT_PATH)),
+        RelayMode::Daemon => script_installed,
+    };
 
-    let service_active = wsl_service::run_in_wsl(
-        distro,
-        &["systemctl", "--user", "is-active", "maze-ssh-relay.service"],
-    )
-    .map(|o| o.stdout.trim().to_string() == "active")
-    .unwrap_or(false);
+    // service_active: systemd check OR socket exists (daemon mode)
+    let service_active = match relay_mode {
+        RelayMode::Systemd => wsl_service::run_in_wsl(
+            distro,
+            &["systemctl", "--user", "is-active", "maze-ssh-relay.service"],
+        )
+        .map(|o| o.stdout.trim().to_string() == "active")
+        .unwrap_or(false),
+        RelayMode::Daemon => {
+            // In daemon mode, "active" means the relay process is running (socket present)
+            wsl_service::run_in_wsl(distro, &["test", "-S", &socket_path])
+                .map(|o| o.success)
+                .unwrap_or(false)
+        }
+    };
 
     let socket_exists = wsl_service::run_in_wsl(distro, &["test", "-S", &socket_path])
         .map(|o| o.success)
@@ -420,7 +519,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
 
     let error = if provider.needs_socat() && !socat_installed {
         Some("socat not installed".to_string())
-    } else if !systemd_available {
+    } else if relay_mode == RelayMode::Systemd && !systemd_available {
         Some("systemd not available".to_string())
     } else if relay_installed && !service_active {
         Some("Service installed but not active".to_string())
@@ -445,6 +544,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         allow_agent_forwarding,
         socat_installed,
         systemd_available,
+        relay_mode,
         error,
     }
 }
@@ -482,8 +582,8 @@ pub fn get_bridge_overview(config: &BridgeConfig) -> BridgeOverview {
 
 // ── Shell env management ──
 
-fn configure_shell_env(distro: &str, socket_path: &str) -> Result<(), MazeSshError> {
-    let block = generate_bashrc_block(socket_path);
+fn configure_shell_env(distro: &str, socket_path: &str, relay_mode: &RelayMode) -> Result<(), MazeSshError> {
+    let block = generate_bashrc_block(socket_path, relay_mode);
 
     for rc_file in &["~/.bashrc", "~/.profile"] {
         let current = wsl_service::run_in_wsl(distro, &["cat", rc_file])
@@ -537,6 +637,132 @@ pub fn configure_agent_forwarding(distro: &str, enable: bool) -> Result<(), Maze
     }
 
     Ok(())
+}
+
+// ── Diagnostics ──
+
+static STEP_SUGGESTIONS: &[&str] = &[
+    "Start or enable your SSH agent provider (e.g. Windows OpenSSH service).",
+    "Download the relay binary using the Download button in Prerequisites.",
+    "Start your WSL distro: open a terminal and run `wsl -d <distro>`.",
+    "Start the relay service: click Start, or re-run bootstrap.",
+    "The Unix socket wasn't created. Check relay logs for errors.",
+    "The agent socket exists but no keys are loaded. Add keys with `ssh-add` on Windows.",
+];
+
+/// Run a step-by-step bridge connectivity test for a distro.
+pub fn run_diagnostics(distro: &str, config: &BridgeConfig) -> DiagnosticsResult {
+    let provider = resolve_provider(config, distro);
+    let relay_mode = resolve_relay_mode(config, distro);
+    let socket_path = resolve_socket_path(config, distro);
+    let relay_binary = provider.relay_binary();
+
+    let mut steps: Vec<DiagnosticsStep> = Vec::new();
+    let mut first_fail: Option<usize> = None;
+
+    let mut add_step = |name: &str, passed: bool, detail: Option<String>| {
+        if !passed && first_fail.is_none() {
+            first_fail = Some(steps.len());
+        }
+        steps.push(DiagnosticsStep {
+            name: name.to_string(),
+            passed,
+            detail,
+        });
+    };
+
+    // Step 1: Provider reachable
+    let ps = provider_health::check_provider(&provider);
+    add_step("Provider reachable", ps.available, ps.error.clone());
+
+    // Step 2: Relay binary installed
+    let binary_ok = is_relay_binary_installed(relay_binary);
+    let binary_detail = if !binary_ok {
+        Some(format!("Expected at: {}", relay_binary_path(relay_binary).display()))
+    } else {
+        None
+    };
+    add_step("Relay binary installed", binary_ok, binary_detail);
+
+    // Step 3: Distro running
+    let distro_running = wsl_service::run_in_wsl(distro, &["echo", "ok"])
+        .map(|o| o.stdout.trim() == "ok")
+        .unwrap_or(false);
+    add_step("Distro running", distro_running, None);
+
+    // Step 4: Service / relay active
+    let service_active = match relay_mode {
+        RelayMode::Systemd => wsl_service::run_in_wsl(
+            distro,
+            &["systemctl", "--user", "is-active", "maze-ssh-relay.service"],
+        )
+        .map(|o| o.stdout.trim() == "active")
+        .unwrap_or(false),
+        RelayMode::Daemon => wsl_service::run_in_wsl(distro, &["test", "-S", &socket_path])
+            .map(|o| o.success)
+            .unwrap_or(false),
+    };
+    let mode_label = match relay_mode {
+        RelayMode::Systemd => "Relay service (systemd)",
+        RelayMode::Daemon => "Relay process (daemon)",
+    };
+    add_step(mode_label, service_active, None);
+
+    // Step 5: Socket exists
+    let socket_ok = wsl_service::run_in_wsl(distro, &["test", "-S", &socket_path])
+        .map(|o| o.success)
+        .unwrap_or(false);
+    add_step("Unix socket exists", socket_ok, Some(socket_path.clone()));
+
+    // Step 6: Keys visible
+    let keys_visible: Vec<String> = if socket_ok {
+        wsl_service::run_in_wsl(
+            distro,
+            &["env", &format!("SSH_AUTH_SOCK={}", socket_path), "ssh-add", "-l"],
+        )
+        .map(|o| {
+            let out = if o.stdout.trim().is_empty() { &o.stderr } else { &o.stdout };
+            out.lines()
+                .filter(|l| !l.trim().is_empty() && !l.contains("The agent has no identities"))
+                .map(|l| l.trim().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let keys_count = keys_visible.len();
+    add_step(
+        "Keys visible through bridge",
+        keys_count > 0,
+        Some(format!("{} key(s) accessible", keys_count)),
+    );
+
+    let suggestions = match first_fail {
+        Some(i) => vec![STEP_SUGGESTIONS[i.min(STEP_SUGGESTIONS.len() - 1)].to_string()],
+        None => Vec::new(),
+    };
+
+    DiagnosticsResult {
+        distro: distro.to_string(),
+        steps,
+        keys_visible,
+        suggestions,
+    }
+}
+
+/// Fetch the last N lines of the relay service journal inside WSL.
+pub fn get_relay_logs(distro: &str, lines: u32) -> Result<String, MazeSshError> {
+    let n = lines.min(200).to_string();
+    let result = wsl_service::run_in_wsl(
+        distro,
+        &["bash", "-c", &format!("journalctl --user -u maze-ssh-relay --no-pager -n {} 2>&1 || echo '(journalctl not available)'", n)],
+    )?;
+    Ok(if result.stdout.trim().is_empty() {
+        result.stderr
+    } else {
+        result.stdout
+    })
 }
 
 /// Generic marker-block removal helper
