@@ -3,7 +3,7 @@ use std::process::Command;
 use crate::models::profile::SshProfile;
 
 /// Create a Command with hidden console window on Windows
-fn hidden_cmd(program: &str) -> Command {
+pub fn hidden_cmd(program: &str) -> Command {
     let mut cmd = Command::new(program);
     #[cfg(windows)]
     {
