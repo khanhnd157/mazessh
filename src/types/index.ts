@@ -157,6 +157,36 @@ export interface KeyHealthIssue {
   message: string;
 }
 
+// ── WSL Bridge Types ──
+
+export interface WslDistro {
+  name: string;
+  state: string;
+  version: number;
+  is_default: boolean;
+}
+
+export interface DistroBridgeStatus {
+  distro_name: string;
+  wsl_version: number;
+  distro_running: boolean;
+  enabled: boolean;
+  relay_installed: boolean;
+  service_active: boolean;
+  socket_exists: boolean;
+  agent_reachable: boolean;
+  socat_installed: boolean;
+  systemd_available: boolean;
+  error: string | null;
+}
+
+export interface BridgeOverview {
+  wsl_available: boolean;
+  npiperelay_installed: boolean;
+  windows_agent_running: boolean;
+  distros: DistroBridgeStatus[];
+}
+
 // ── Helpers ──
 
 export function getProviderLabel(provider: Provider): string {

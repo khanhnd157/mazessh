@@ -9,7 +9,7 @@ pub mod state;
 use std::time::Duration;
 
 #[cfg(feature = "desktop")]
-use services::{lock_service, profile_service, repo_mapping_service, session_service, settings_service};
+use services::{bridge_service, lock_service, profile_service, repo_mapping_service, session_service, settings_service};
 #[cfg(feature = "desktop")]
 use state::AppState;
 #[cfg(feature = "desktop")]
@@ -36,8 +36,9 @@ pub fn run() {
     let repo_mappings = repo_mapping_service::load_mappings().unwrap_or_default();
     let settings = settings_service::load_settings();
     let pin_is_set = lock_service::is_pin_configured();
+    let bridge_config = bridge_service::load_bridge_config();
 
-    let app_state = AppState::from_persisted(profiles, active_id, repo_mappings, settings, pin_is_set);
+    let app_state = AppState::from_persisted(profiles, active_id, repo_mappings, settings, pin_is_set, bridge_config);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -188,6 +189,16 @@ pub fn run() {
             commands::advanced::get_key_fingerprint,
             commands::advanced::check_all_keys_health,
             commands::advanced::read_public_key,
+            // Bridge
+            commands::bridge::get_bridge_overview,
+            commands::bridge::list_wsl_distros,
+            commands::bridge::bootstrap_bridge,
+            commands::bridge::teardown_bridge,
+            commands::bridge::start_bridge_relay,
+            commands::bridge::stop_bridge_relay,
+            commands::bridge::restart_bridge_relay,
+            commands::bridge::get_distro_bridge_status,
+            commands::bridge::set_bridge_enabled,
             // Tray
             update_tray_tooltip,
         ])

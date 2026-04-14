@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::error::MazeSshError;
 use crate::models::profile::SshProfile;
 
-fn data_dir() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     let home = dirs::home_dir().expect("Could not find home directory");
     home.join(".maze-ssh")
 }

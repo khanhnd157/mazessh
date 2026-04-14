@@ -2,11 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ActivationResult,
   AuditEntry,
+  BridgeOverview,
   ConfigBackup,
   ConnectionTestResult,
   CreateProfileInput,
   CreateRepoMappingInput,
   DetectedKey,
+  DistroBridgeStatus,
   GitConfigScope,
   GitIdentityInfo,
   KeyFingerprint,
@@ -18,6 +20,7 @@ import type {
   SecuritySettings,
   SshProfile,
   UpdateProfileInput,
+  WslDistro,
 } from "@/types";
 
 export const commands = {
@@ -115,4 +118,24 @@ export const commands = {
     invoke<KeyHealthReport[]>("check_all_keys_health"),
   readPublicKey: (id: string) =>
     invoke<string>("read_public_key", { id }),
+
+  // Bridge
+  getBridgeOverview: () =>
+    invoke<BridgeOverview>("get_bridge_overview"),
+  listWslDistros: () =>
+    invoke<WslDistro[]>("list_wsl_distros"),
+  bootstrapBridge: (distro: string) =>
+    invoke<DistroBridgeStatus>("bootstrap_bridge", { distro }),
+  teardownBridge: (distro: string) =>
+    invoke<void>("teardown_bridge", { distro }),
+  startBridgeRelay: (distro: string) =>
+    invoke<void>("start_bridge_relay", { distro }),
+  stopBridgeRelay: (distro: string) =>
+    invoke<void>("stop_bridge_relay", { distro }),
+  restartBridgeRelay: (distro: string) =>
+    invoke<void>("restart_bridge_relay", { distro }),
+  getDistroBridgeStatus: (distro: string) =>
+    invoke<DistroBridgeStatus>("get_distro_bridge_status", { distro }),
+  setBridgeEnabled: (distro: string, enabled: boolean) =>
+    invoke<void>("set_bridge_enabled", { distro, enabled }),
 };

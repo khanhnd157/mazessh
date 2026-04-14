@@ -1,6 +1,7 @@
 use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 
+use crate::models::bridge::BridgeConfig;
 use crate::models::profile::SshProfile;
 use crate::models::repo_mapping::RepoMapping;
 use crate::models::security::SecuritySettings;
@@ -8,6 +9,7 @@ use crate::models::security::SecuritySettings;
 pub struct AppState {
     pub inner: RwLock<AppStateInner>,
     pub security: Mutex<SecurityState>,
+    pub bridge: RwLock<BridgeConfig>,
 }
 
 pub struct AppStateInner {
@@ -44,6 +46,7 @@ impl AppState {
                 failed_pin_attempts: 0,
                 last_failed_attempt: None,
             }),
+            bridge: RwLock::new(BridgeConfig::default()),
         }
     }
 
@@ -53,6 +56,7 @@ impl AppState {
         repo_mappings: Vec<RepoMapping>,
         settings: SecuritySettings,
         pin_is_set: bool,
+        bridge_config: BridgeConfig,
     ) -> Self {
         Self {
             inner: RwLock::new(AppStateInner {
@@ -69,6 +73,7 @@ impl AppState {
                 failed_pin_attempts: 0,
                 last_failed_attempt: None,
             }),
+            bridge: RwLock::new(bridge_config),
         }
     }
 }

@@ -1,4 +1,5 @@
 pub mod audit_service;
+pub mod bridge_service;
 pub mod config_engine;
 pub mod git_identity_service;
 pub mod key_scanner;
@@ -13,3 +14,4 @@ pub mod session_service;
 pub mod settings_service;
 pub mod ssh_engine;
 pub mod validation;
+pub mod wsl_service;

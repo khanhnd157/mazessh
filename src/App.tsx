@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "sonner";
-import { KeyRound, FileCode2, FolderGit2, Settings } from "lucide-react";
+import { KeyRound, FileCode2, FolderGit2, Monitor, Settings } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLogStore } from "@/stores/logStore";
@@ -19,6 +19,7 @@ import { ConfigPreview } from "@/components/ssh-config/ConfigPreview";
 import { RepoMappingList } from "@/components/repos/RepoMappingList";
 import { LockScreen } from "@/components/security/LockScreen";
 import { SecuritySettingsPanel } from "@/components/settings/SecuritySettings";
+import { WslBridgePanel } from "@/components/settings/WslBridgeSettings";
 import type { AgentStatusEvent } from "@/types";
 
 function App() {
@@ -124,6 +125,12 @@ function App() {
               onClick={() => setActiveTab("config")}
             />
             <TabButton
+              icon={<Monitor size={14} />}
+              label="WSL Bridge"
+              active={activeTab === "bridge"}
+              onClick={() => setActiveTab("bridge")}
+            />
+            <TabButton
               icon={<Settings size={14} />}
               label="Settings"
               active={activeTab === "settings"}
@@ -140,6 +147,9 @@ function App() {
             </TabPanel>
             <TabPanel active={activeTab === "config"} scrollable>
               <ConfigPreview />
+            </TabPanel>
+            <TabPanel active={activeTab === "bridge"} scrollable>
+              <WslBridgePanel />
             </TabPanel>
             <TabPanel active={activeTab === "settings"} scrollable>
               <SecuritySettingsPanel />
