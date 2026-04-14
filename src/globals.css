@@ -63,6 +63,15 @@
   --shadow-color: 260 20% 60%;
 }
 
+/* ─── z-index scale ─── */
+@layer base {
+  :root {
+    --z-dropdown: 50;
+    --z-modal: 60;
+    --z-lock: 100;
+  }
+}
+
 @theme {
   --color-background: var(--color-background);
   --color-foreground: var(--color-foreground);
@@ -115,6 +124,10 @@ body {
 }
 
 /* ─── Scrollbar ─── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;

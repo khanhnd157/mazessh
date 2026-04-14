@@ -92,7 +92,7 @@ export function AddRepoMappingDialog({ onClose, preselectedProfileId }: AddRepoM
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-card border rounded-xl shadow-2xl shadow-black/40 w-120 max-h-[85vh] overflow-hidden flex flex-col">
+      <div role="dialog" aria-modal="true" aria-label="Map repository" className="bg-card border rounded-xl shadow-2xl shadow-black/40 w-120 max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b">
           <div className="flex items-center gap-2">

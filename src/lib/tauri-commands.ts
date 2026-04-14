@@ -10,6 +10,7 @@ import type {
   GitConfigScope,
   GitIdentityInfo,
   KeyFingerprint,
+  KeyHealthReport,
   LockStateResponse,
   ProfileSummary,
   RepoMapping,
@@ -110,4 +111,8 @@ export const commands = {
   importProfiles: (json: string) => invoke<number>("import_profiles", { json }),
   getKeyFingerprint: (id: string) =>
     invoke<KeyFingerprint>("get_key_fingerprint", { id }),
+  checkAllKeysHealth: () =>
+    invoke<KeyHealthReport[]>("check_all_keys_health"),
+  readPublicKey: (id: string) =>
+    invoke<string>("read_public_key", { id }),
 };
