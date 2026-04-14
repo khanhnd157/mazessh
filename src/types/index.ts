@@ -125,6 +125,8 @@ export interface AuditEntry {
   action: string;
   profile_name: string | null;
   result: string;
+  distro?: string | null;
+  provider?: string | null;
 }
 
 // ── M4: Advanced Types ──
@@ -149,6 +151,7 @@ export interface KeyHealthReport {
   bits: number;
   has_public_key: boolean;
   has_passphrase: boolean;
+  is_hardware_key: boolean;
   issues: KeyHealthIssue[];
 }
 
@@ -159,10 +162,11 @@ export interface KeyHealthIssue {
 
 // ── WSL Bridge Types ──
 
-export type BridgeProviderType = "windows-open-ssh" | "one-password" | "pageant";
+export type BridgeProviderType = "windows-open-ssh" | "one-password" | "pageant" | "custom";
 
 export interface BridgeProvider {
   type: BridgeProviderType;
+  pipe_path?: string;
 }
 
 export interface ProviderStatus {
@@ -195,6 +199,7 @@ export interface DistroBridgeStatus {
   service_active: boolean;
   socket_exists: boolean;
   agent_reachable: boolean;
+  allow_agent_forwarding: boolean;
   socat_installed: boolean;
   systemd_available: boolean;
   error: string | null;

@@ -201,6 +201,8 @@ pub fn run() {
             commands::bridge::set_bridge_enabled,
             commands::bridge::list_bridge_providers,
             commands::bridge::set_distro_provider,
+            commands::bridge::get_recommended_provider,
+            commands::bridge::set_agent_forwarding,
             // Tray
             update_tray_tooltip,
         ])

@@ -114,8 +114,10 @@ fn generate_relay_script(
     socket_path: &str,
 ) -> String {
     match provider {
-        BridgeProvider::WindowsOpenSsh | BridgeProvider::OnePassword => {
-            let pipe = provider.named_pipe().unwrap();
+        BridgeProvider::WindowsOpenSsh
+        | BridgeProvider::OnePassword
+        | BridgeProvider::Custom { .. } => {
+            let pipe = provider.named_pipe().unwrap_or_default();
             format!(
                 r#"#!/bin/bash
 # Maze SSH Agent Relay ({name}) — DO NOT EDIT (managed by Maze SSH)
@@ -357,6 +359,13 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
 
     let enabled = config.distros.iter().any(|d| d.distro_name == distro && d.enabled);
 
+    let allow_agent_forwarding = config
+        .distros
+        .iter()
+        .find(|d| d.distro_name == distro)
+        .map(|d| d.allow_agent_forwarding)
+        .unwrap_or(false);
+
     if !distro_running {
         return DistroBridgeStatus {
             distro_name: distro.to_string(),
@@ -368,6 +377,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
             service_active: false,
             socket_exists: false,
             agent_reachable: false,
+            allow_agent_forwarding,
             socat_installed: false,
             systemd_available: false,
             error: Some("Distro is not running".to_string()),
@@ -432,6 +442,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         service_active,
         socket_exists,
         agent_reachable,
+        allow_agent_forwarding,
         socat_installed,
         systemd_available,
         error,
@@ -498,6 +509,57 @@ fn remove_shell_env(distro: &str) -> Result<(), MazeSshError> {
         }
     }
     Ok(())
+}
+
+// ── Agent forwarding management ──
+
+/// Configure or remove ForwardAgent in ~/.ssh/config inside WSL (marker-based)
+pub fn configure_agent_forwarding(distro: &str, enable: bool) -> Result<(), MazeSshError> {
+    // Ensure ~/.ssh exists
+    let _ = wsl_service::run_in_wsl(distro, &["mkdir", "-p", "~/.ssh"]);
+
+    let current = wsl_service::run_in_wsl(distro, &["cat", "~/.ssh/config"])
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+
+    // Remove existing forwarding block
+    let cleaned = remove_block_between(&current, FORWARD_MARKER_BEGIN, FORWARD_MARKER_END);
+
+    if enable {
+        let block = format!(
+            "{}\nHost *\n  ForwardAgent yes\n{}\n",
+            FORWARD_MARKER_BEGIN, FORWARD_MARKER_END
+        );
+        let new_content = format!("{}\n{}", cleaned.trim_end(), block);
+        wsl_service::wsl_write_file(distro, "~/.ssh/config", &new_content)?;
+    } else if current.contains(FORWARD_MARKER_BEGIN) {
+        wsl_service::wsl_write_file(distro, "~/.ssh/config", &cleaned)?;
+    }
+
+    Ok(())
+}
+
+/// Generic marker-block removal helper
+fn remove_block_between(content: &str, begin: &str, end: &str) -> String {
+    let mut result = String::new();
+    let mut inside_block = false;
+
+    for line in content.lines() {
+        if line.trim() == begin {
+            inside_block = true;
+            continue;
+        }
+        if line.trim() == end {
+            inside_block = false;
+            continue;
+        }
+        if !inside_block {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+
+    result
 }
 
 fn remove_marker_block(content: &str) -> String {

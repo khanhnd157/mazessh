@@ -30,6 +30,7 @@ pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
                 action: "lock".to_string(),
                 profile_name: None,
                 result: "Locked — agent keys cleared".to_string(),
+                ..Default::default()
             });
 
             // Also emit agent status
@@ -77,6 +78,7 @@ pub fn setup_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSshE
         action: "pin_set".to_string(),
         profile_name: None,
         result: "success".to_string(),
+        ..Default::default()
     });
 
     Ok(())
@@ -117,6 +119,7 @@ pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeS
             action: "unlock".to_string(),
             profile_name: None,
             result: "success".to_string(),
+            ..Default::default()
         });
     } else {
         let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
@@ -129,6 +132,7 @@ pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeS
             action: "unlock_failed".to_string(),
             profile_name: None,
             result: format!("Invalid PIN ({} attempts remaining)", attempts_left),
+            ..Default::default()
         });
     }
     Ok(valid)
@@ -156,6 +160,7 @@ pub fn change_pin(
         action: "pin_changed".to_string(),
         profile_name: None,
         result: "success".to_string(),
+        ..Default::default()
     });
 
     Ok(())
@@ -181,6 +186,7 @@ pub fn remove_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSsh
         action: "pin_removed".to_string(),
         profile_name: None,
         result: "success".to_string(),
+        ..Default::default()
     });
 
     Ok(())
@@ -227,6 +233,7 @@ pub fn update_security_settings(
         action: "settings_changed".to_string(),
         profile_name: None,
         result: "success".to_string(),
+        ..Default::default()
     });
 
     Ok(())

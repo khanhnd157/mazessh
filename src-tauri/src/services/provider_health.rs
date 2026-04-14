@@ -1,7 +1,7 @@
 use crate::models::bridge_provider::{BridgeProvider, ProviderStatus};
 use crate::services::ssh_engine::hidden_cmd;
 
-/// Check all known providers and return their Windows-side availability
+/// Check all built-in providers and return their Windows-side availability
 pub fn check_all_providers() -> Vec<ProviderStatus> {
     vec![
         check_provider(&BridgeProvider::WindowsOpenSsh),
@@ -16,7 +16,20 @@ pub fn check_provider(provider: &BridgeProvider) -> ProviderStatus {
         BridgeProvider::WindowsOpenSsh => check_windows_openssh(),
         BridgeProvider::OnePassword => check_onepassword(),
         BridgeProvider::Pageant => check_pageant(),
+        BridgeProvider::Custom { ref pipe_path } => check_custom_pipe(pipe_path),
     }
+}
+
+/// Score and return the best available provider.
+/// Priority: availability (required) > security tier > default preference.
+pub fn recommend_provider(statuses: &[ProviderStatus]) -> Option<BridgeProvider> {
+    let mut candidates: Vec<_> = statuses
+        .iter()
+        .filter(|s| s.available)
+        .map(|s| (s, s.provider.recommendation_score()))
+        .collect();
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates.first().map(|(s, _)| s.provider.clone())
 }
 
 /// Windows OpenSSH: check if ssh-agent service is running
@@ -127,5 +140,106 @@ $hwnd -ne [IntPtr]::Zero
         } else {
             Some("No Pageant-compatible agent detected (PuTTY, KeeAgent, or GPG4Win)".to_string())
         },
+    }
+}
+
+/// Custom: verify the user-defined named pipe exists
+fn check_custom_pipe(pipe_path: &str) -> ProviderStatus {
+    if pipe_path.is_empty() {
+        return ProviderStatus {
+            provider: BridgeProvider::Custom { pipe_path: pipe_path.to_string() },
+            display_name: "Custom".to_string(),
+            available: false,
+            error: Some("No pipe path configured".to_string()),
+        };
+    }
+
+    // Convert //./pipe/xxx to \\.\pipe\xxx for PowerShell Test-Path
+    let ps_path = pipe_path.replace("//./pipe/", r"\\.\pipe\");
+    let cmd_str = format!("Test-Path '{}'", ps_path);
+
+    let available = hidden_cmd("powershell")
+        .args(["-NoProfile", "-Command", &cmd_str])
+        .output()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .eq_ignore_ascii_case("True")
+        })
+        .unwrap_or(false);
+
+    ProviderStatus {
+        provider: BridgeProvider::Custom { pipe_path: pipe_path.to_string() },
+        display_name: "Custom".to_string(),
+        available,
+        error: if available {
+            None
+        } else {
+            Some(format!("Pipe not found: {}", pipe_path))
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_recommend_provider_picks_highest_score() {
+        let statuses = vec![
+            ProviderStatus {
+                provider: BridgeProvider::WindowsOpenSsh,
+                display_name: "OpenSSH".into(),
+                available: true,
+                error: None,
+            },
+            ProviderStatus {
+                provider: BridgeProvider::OnePassword,
+                display_name: "1Password".into(),
+                available: true,
+                error: None,
+            },
+            ProviderStatus {
+                provider: BridgeProvider::Pageant,
+                display_name: "Pageant".into(),
+                available: true,
+                error: None,
+            },
+        ];
+        let rec = recommend_provider(&statuses);
+        assert_eq!(rec, Some(BridgeProvider::OnePassword));
+    }
+
+    #[test]
+    fn test_recommend_provider_skips_unavailable() {
+        let statuses = vec![
+            ProviderStatus {
+                provider: BridgeProvider::OnePassword,
+                display_name: "1Password".into(),
+                available: false,
+                error: Some("not running".into()),
+            },
+            ProviderStatus {
+                provider: BridgeProvider::WindowsOpenSsh,
+                display_name: "OpenSSH".into(),
+                available: true,
+                error: None,
+            },
+        ];
+        let rec = recommend_provider(&statuses);
+        assert_eq!(rec, Some(BridgeProvider::WindowsOpenSsh));
+    }
+
+    #[test]
+    fn test_recommend_provider_none_available() {
+        let statuses = vec![
+            ProviderStatus {
+                provider: BridgeProvider::WindowsOpenSsh,
+                display_name: "OpenSSH".into(),
+                available: false,
+                error: Some("down".into()),
+            },
+        ];
+        assert_eq!(recommend_provider(&statuses), None);
     }
 }

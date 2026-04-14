@@ -149,7 +149,13 @@ pub struct KeyHealthReport {
     pub bits: u32,
     pub has_public_key: bool,
     pub has_passphrase: bool,
+    pub is_hardware_key: bool,
     pub issues: Vec<KeyHealthIssue>,
+}
+
+fn is_hardware_key_type(key_type: &str) -> bool {
+    let upper = key_type.to_uppercase();
+    upper.contains("ECDSA-SK") || upper.contains("ED25519-SK")
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -217,6 +223,13 @@ pub fn check_all_keys_health(
                             });
                         }
 
+                        if is_hardware_key_type(&key_type) {
+                            issues.push(KeyHealthIssue {
+                                severity: "info".to_string(),
+                                message: "FIDO2/hardware token key — requires physical device for operations".to_string(),
+                            });
+                        }
+
                         (key_type, bits_num)
                     }
                     Err(_) => {
@@ -231,12 +244,15 @@ pub fn check_all_keys_health(
                 ("Unknown".to_string(), 0)
             };
 
+            let is_hardware_key = is_hardware_key_type(&key_type);
+
             KeyHealthReport {
                 profile_name: profile.name.clone(),
                 key_type,
                 bits,
                 has_public_key,
                 has_passphrase: profile.has_passphrase,
+                is_hardware_key,
                 issues,
             }
         })

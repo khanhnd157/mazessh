@@ -9,6 +9,7 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  AlertTriangle,
   Loader2,
   ExternalLink,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "windows-open-ssh": "OpenSSH",
   "one-password": "1Password",
   pageant: "Pageant",
+  custom: "Custom",
 };
 
 function providerLabel(provider: BridgeProvider): string {
@@ -32,20 +34,24 @@ export function WslBridgePanel() {
   const {
     overview,
     providers,
+    recommendedProvider,
     loading,
     fetchOverview,
+    fetchRecommended,
     bootstrapDistro,
     teardownDistro,
     startRelay,
     stopRelay,
     restartRelay,
     setDistroProvider,
+    setAgentForwarding,
   } = useBridgeStore();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [teardownTarget, setTeardownTarget] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOverview();
+    fetchRecommended();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -104,6 +110,7 @@ export function WslBridgePanel() {
                 key={distro.distro_name}
                 distro={distro}
                 providers={providers}
+                recommendedProvider={recommendedProvider}
                 actionLoading={actionLoading}
                 onBootstrap={() => handleBootstrap(distro.distro_name)}
                 onStart={() =>
@@ -119,6 +126,12 @@ export function WslBridgePanel() {
                 onProviderChange={(provider) =>
                   handleAction(`Changed provider for ${distro.distro_name}`, () =>
                     setDistroProvider(distro.distro_name, provider),
+                  )
+                }
+                onForwardingChange={(enabled) =>
+                  handleAction(
+                    enabled ? "Agent forwarding enabled" : "Agent forwarding disabled",
+                    () => setAgentForwarding(distro.distro_name, enabled),
                   )
                 }
                 onRefresh={() => fetchOverview()}
@@ -182,10 +195,8 @@ function PrerequisitesCard({
         </div>
       ) : (
         <div className="space-y-3">
-          {/* WSL availability */}
           <StatusRow label="WSL available" ok={overview.wsl_available} />
 
-          {/* Provider statuses */}
           <div className="space-y-1">
             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               Agent Providers
@@ -200,7 +211,6 @@ function PrerequisitesCard({
             ))}
           </div>
 
-          {/* Relay binaries */}
           {overview.relay_binaries.length > 0 && (
             <div className="space-y-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -241,6 +251,7 @@ function StatusRow({ label, ok, hint }: { label: string; ok: boolean; hint?: str
 function DistroCard({
   distro,
   providers,
+  recommendedProvider,
   actionLoading,
   onBootstrap,
   onStart,
@@ -248,10 +259,12 @@ function DistroCard({
   onRestart,
   onTeardown,
   onProviderChange,
+  onForwardingChange,
   onRefresh,
 }: {
   distro: DistroBridgeStatus;
   providers: ProviderStatus[];
+  recommendedProvider: BridgeProvider | null;
   actionLoading: string | null;
   onBootstrap: () => void;
   onStart: () => void;
@@ -259,6 +272,7 @@ function DistroCard({
   onRestart: () => void;
   onTeardown: () => void;
   onProviderChange: (provider: BridgeProvider) => void;
+  onForwardingChange: (enabled: boolean) => void;
   onRefresh: () => void;
 }) {
   const isActionRunning = actionLoading !== null;
@@ -280,7 +294,6 @@ function DistroCard({
           >
             {distro.distro_running ? "Running" : "Stopped"}
           </span>
-          {/* Provider badge (when bridge is installed) */}
           {distro.relay_installed && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-secondary text-muted-foreground">
               {providerLabel(distro.provider)}
@@ -305,15 +318,14 @@ function DistroCard({
       {/* Running but not bootstrapped */}
       {distro.distro_running && !distro.relay_installed && (
         <div className="space-y-3">
-          {/* Provider selector */}
           <ProviderSelector
             selected={distro.provider}
             providerStatuses={providers}
+            recommended={recommendedProvider?.type ?? null}
             onChange={onProviderChange}
             disabled={isActionRunning}
           />
 
-          {/* Prerequisite checks (contextual) */}
           <div className="space-y-1">
             {distro.provider.type !== "pageant" && (
               <StatusRow
@@ -348,20 +360,46 @@ function DistroCard({
       {/* Bootstrapped — show full status */}
       {distro.distro_running && distro.relay_installed && (
         <div className="space-y-3">
-          {/* Status indicators */}
           <div className="space-y-1">
             <StatusRow label="Relay service" ok={distro.service_active} />
             <StatusRow label="Socket exists" ok={distro.socket_exists} />
             <StatusRow label="Agent reachable" ok={distro.agent_reachable} />
           </div>
 
-          {/* Error display */}
           {distro.error && (
             <div className="flex items-start gap-1.5 text-xs text-warning">
               <AlertCircle size={12} className="mt-0.5 shrink-0" />
               {distro.error}
             </div>
           )}
+
+          {/* Agent forwarding toggle */}
+          <div className="flex items-center justify-between py-1">
+            <div className="flex-1">
+              <span className="text-xs text-muted-foreground">Forward SSH agent to remote hosts</span>
+              {distro.allow_agent_forwarding && (
+                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-warning">
+                  <AlertTriangle size={10} />
+                  Only enable if you trust all remote hosts
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => onForwardingChange(!distro.allow_agent_forwarding)}
+              disabled={isActionRunning}
+              aria-label="Toggle agent forwarding"
+              className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${
+                distro.allow_agent_forwarding ? "bg-warning" : "bg-secondary"
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                  distro.allow_agent_forwarding ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
 
           {/* Actions */}
           <div className="flex items-center gap-2">
