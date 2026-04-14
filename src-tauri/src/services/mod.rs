@@ -5,6 +5,7 @@ pub mod git_identity_service;
 pub mod key_scanner;
 pub mod lock_service;
 pub mod profile_service;
+pub mod provider_health;
 pub mod repo_detection_service;
 pub mod repo_mapping_service;
 #[allow(dead_code)]

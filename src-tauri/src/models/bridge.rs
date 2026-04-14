@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::bridge_provider::{BridgeProvider, ProviderStatus, RelayBinaryStatus};
+
 // ── Persisted config (stored at ~/.maze-ssh/bridge.json) ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -15,6 +17,9 @@ pub struct DistroBridgeConfig {
     /// Override socket path inside WSL (default: /tmp/maze-ssh-agent.sock)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub socket_path: Option<String>,
+    /// Which SSH agent provider to bridge. Defaults to WindowsOpenSsh for backward compat.
+    #[serde(default)]
+    pub provider: BridgeProvider,
 }
 
 // ── Runtime types (returned to frontend) ──
@@ -37,6 +42,8 @@ pub struct DistroBridgeStatus {
     pub wsl_version: u8,
     pub distro_running: bool,
     pub enabled: bool,
+    /// Which provider this distro is configured to bridge
+    pub provider: BridgeProvider,
     /// Relay script + systemd unit exist in distro
     pub relay_installed: bool,
     /// systemctl --user is-active reports "active"
@@ -45,7 +52,7 @@ pub struct DistroBridgeStatus {
     pub socket_exists: bool,
     /// ssh-add -l succeeds through the bridged socket
     pub agent_reachable: bool,
-    /// socat binary available in distro
+    /// socat binary available in distro (only relevant for pipe-based providers)
     pub socat_installed: bool,
     /// systemd --user functional in distro
     pub systemd_available: bool,
@@ -58,8 +65,14 @@ pub struct DistroBridgeStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BridgeOverview {
     pub wsl_available: bool,
+    /// Backward compat: true if npiperelay.exe is installed
     pub npiperelay_installed: bool,
+    /// Backward compat: true if Windows OpenSSH agent is running
     pub windows_agent_running: bool,
+    /// Per-provider availability on the Windows side
+    pub provider_statuses: Vec<ProviderStatus>,
+    /// Which relay binaries are installed
+    pub relay_binaries: Vec<RelayBinaryStatus>,
     pub distros: Vec<DistroBridgeStatus>,
 }
 

@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use crate::error::MazeSshError;
 use crate::models::bridge::*;
+use crate::models::bridge_provider::*;
 use crate::services::profile_service;
-use crate::services::ssh_engine::hidden_cmd;
+use crate::services::provider_health;
 use crate::services::wsl_service;
 
 // ── Config persistence ──
@@ -30,21 +31,30 @@ pub fn save_bridge_config(config: &BridgeConfig) -> Result<(), MazeSshError> {
     Ok(())
 }
 
-// ── npiperelay management ──
+// ── Relay binary management ──
 
-/// Default path for npiperelay.exe on the Windows filesystem
-pub fn npiperelay_path() -> PathBuf {
-    profile_service::data_dir().join("bin").join("npiperelay.exe")
+/// Path for a relay binary on the Windows filesystem (~/.maze-ssh/bin/{filename})
+pub fn relay_binary_path(binary: RelayBinary) -> PathBuf {
+    profile_service::data_dir().join("bin").join(binary.filename())
 }
 
+pub fn is_relay_binary_installed(binary: RelayBinary) -> bool {
+    relay_binary_path(binary).exists()
+}
+
+/// Backward compat wrapper
+pub fn npiperelay_path() -> PathBuf {
+    relay_binary_path(RelayBinary::Npiperelay)
+}
+
+/// Backward compat wrapper
 pub fn is_npiperelay_installed() -> bool {
-    npiperelay_path().exists()
+    is_relay_binary_installed(RelayBinary::Npiperelay)
 }
 
 /// Convert a Windows path to the WSL /mnt/c/... equivalent
 fn windows_path_to_wsl(path: &std::path::Path) -> String {
     let s = path.to_string_lossy();
-    // Convert  C:\Users\foo\...  →  /mnt/c/Users/foo/...
     if s.len() >= 2 && s.as_bytes()[1] == b':' {
         let drive = (s.as_bytes()[0] as char).to_ascii_lowercase();
         let rest = s[2..].replace('\\', "/");
@@ -54,29 +64,39 @@ fn windows_path_to_wsl(path: &std::path::Path) -> String {
     }
 }
 
-/// Get the WSL-visible path to npiperelay.exe
-fn npiperelay_wsl_path() -> String {
-    windows_path_to_wsl(&npiperelay_path())
+/// Get the WSL-visible path for a relay binary
+fn relay_binary_wsl_path(binary: RelayBinary) -> String {
+    windows_path_to_wsl(&relay_binary_path(binary))
 }
 
-// ── Windows agent check ──
+/// Check all relay binaries and return their status
+fn check_relay_binaries() -> Vec<RelayBinaryStatus> {
+    RelayBinary::all()
+        .iter()
+        .map(|b| RelayBinaryStatus {
+            binary: *b,
+            installed: is_relay_binary_installed(*b),
+            path: relay_binary_path(*b).to_string_lossy().to_string(),
+        })
+        .collect()
+}
 
-/// Check if the Windows OpenSSH Authentication Agent service is running
+// ── Windows agent check (backward compat) ──
+
 pub fn is_windows_agent_running() -> bool {
-    let output = hidden_cmd("powershell")
-        .args(["-NoProfile", "-Command", "(Get-Service ssh-agent).Status"])
-        .output();
-
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            stdout.trim().eq_ignore_ascii_case("Running")
-        }
-        Err(_) => false,
-    }
+    provider_health::check_provider(&BridgeProvider::WindowsOpenSsh).available
 }
 
 // ── Bootstrap / teardown ──
+
+fn resolve_provider(config: &BridgeConfig, distro: &str) -> BridgeProvider {
+    config
+        .distros
+        .iter()
+        .find(|d| d.distro_name == distro)
+        .map(|d| d.provider.clone())
+        .unwrap_or_default()
+}
 
 fn resolve_socket_path(config: &BridgeConfig, distro: &str) -> String {
     config
@@ -87,27 +107,55 @@ fn resolve_socket_path(config: &BridgeConfig, distro: &str) -> String {
         .unwrap_or_else(|| DEFAULT_SOCKET_PATH.to_string())
 }
 
-fn generate_relay_script(npiperelay_wsl: &str, socket_path: &str) -> String {
-    format!(
-        r#"#!/bin/bash
-# Maze SSH Agent Relay — DO NOT EDIT (managed by Maze SSH)
+/// Generate the relay script, dispatched by provider type
+fn generate_relay_script(
+    provider: &BridgeProvider,
+    relay_binary_wsl: &str,
+    socket_path: &str,
+) -> String {
+    match provider {
+        BridgeProvider::WindowsOpenSsh | BridgeProvider::OnePassword => {
+            let pipe = provider.named_pipe().unwrap();
+            format!(
+                r#"#!/bin/bash
+# Maze SSH Agent Relay ({name}) — DO NOT EDIT (managed by Maze SSH)
 SOCKET="{socket_path}"
-NPIPERELAY="{npiperelay_wsl}"
+RELAY="{relay_binary_wsl}"
 
 # Clean up stale socket
 rm -f "$SOCKET"
 
-# Bridge: socat listens on Unix socket, pipes to npiperelay which talks to Windows named pipe
+# Bridge: socat listens on Unix socket, pipes to relay which talks to Windows named pipe
 exec socat UNIX-LISTEN:"$SOCKET",fork,mode=0600 \
-  EXEC:"$NPIPERELAY -ei -s //./pipe/openssh-ssh-agent",nofork
-"#
-    )
+  EXEC:"$RELAY -ei -s {pipe}",nofork
+"#,
+                name = provider.display_name(),
+            )
+        }
+        BridgeProvider::Pageant => {
+            // wsl-ssh-pageant creates the socket itself, no socat needed
+            format!(
+                r#"#!/bin/bash
+# Maze SSH Agent Relay ({name}) — DO NOT EDIT (managed by Maze SSH)
+SOCKET="{socket_path}"
+PAGEANT="{relay_binary_wsl}"
+
+# Clean up stale socket
+rm -f "$SOCKET"
+
+# Bridge: wsl-ssh-pageant connects to Pageant and exposes a Unix socket
+exec "$PAGEANT" --wsl "$SOCKET"
+"#,
+                name = provider.display_name(),
+            )
+        }
+    }
 }
 
-fn generate_systemd_unit(socket_path: &str) -> String {
+fn generate_systemd_unit(provider: &BridgeProvider, socket_path: &str) -> String {
     format!(
         r#"[Unit]
-Description=Maze SSH Agent Relay (Windows OpenSSH -> WSL)
+Description={description}
 After=default.target
 
 [Service]
@@ -120,6 +168,7 @@ Environment=MAZE_SSH_SOCKET={socket_path}
 [Install]
 WantedBy=default.target
 "#,
+        description = provider.service_description(),
         relay_script = RELAY_SCRIPT_PATH,
         socket_path = socket_path,
     )
@@ -135,25 +184,33 @@ fn generate_bashrc_block(socket_path: &str) -> String {
 }
 
 /// Bootstrap the bridge relay into a WSL distro.
-///
-/// Steps:
-/// 1. Verify prerequisites (npiperelay, WSL2, socat, systemd)
-/// 2. Write relay script + systemd unit
-/// 3. Enable + start the service
-/// 4. Configure SSH_AUTH_SOCK in shell profiles
 pub fn bootstrap_distro(
     distro: &str,
     config: &BridgeConfig,
 ) -> Result<DistroBridgeStatus, MazeSshError> {
-    // 1. Verify npiperelay exists
-    if !is_npiperelay_installed() {
+    let provider = resolve_provider(config, distro);
+    let relay_binary = provider.relay_binary();
+
+    // 1. Verify relay binary exists
+    if !is_relay_binary_installed(relay_binary) {
         return Err(MazeSshError::BridgeError(format!(
-            "npiperelay.exe not found at {}. Place the binary there or use the bundled copy.",
-            npiperelay_path().display()
+            "{} not found at {}. Place the binary there.",
+            relay_binary.filename(),
+            relay_binary_path(relay_binary).display()
         )));
     }
 
-    // 2. Verify distro is WSL2 and running
+    // 2. Verify provider is available on Windows
+    let provider_status = provider_health::check_provider(&provider);
+    if !provider_status.available {
+        return Err(MazeSshError::BridgeError(format!(
+            "{} agent is not available: {}",
+            provider.display_name(),
+            provider_status.error.unwrap_or_default()
+        )));
+    }
+
+    // 3. Verify distro is WSL2 and running
     let distros = wsl_service::list_distros()?;
     let wsl_distro = distros
         .iter()
@@ -172,14 +229,14 @@ pub fn bootstrap_distro(
         let _ = wsl_service::run_in_wsl(distro, &["echo", "ok"]);
     }
 
-    // 3. Check socat
-    if !wsl_service::has_socat(distro) {
+    // 4. Check socat (only for pipe-based providers)
+    if provider.needs_socat() && !wsl_service::has_socat(distro) {
         return Err(MazeSshError::BridgeError(
             "socat is not installed in this distro. Install with: sudo apt install socat".to_string(),
         ));
     }
 
-    // 4. Check systemd
+    // 5. Check systemd
     if !wsl_service::has_systemd(distro) {
         return Err(MazeSshError::BridgeError(
             "systemd is required but not available. Add [boot]\\nsystemd=true to /etc/wsl.conf and restart WSL.".to_string(),
@@ -187,23 +244,21 @@ pub fn bootstrap_distro(
     }
 
     let socket_path = resolve_socket_path(config, distro);
-    let npiperelay_wsl = npiperelay_wsl_path();
+    let relay_wsl = relay_binary_wsl_path(relay_binary);
 
-    // 5. Create directories
+    // 6. Create directories
     let _ = wsl_service::run_in_wsl(distro, &["mkdir", "-p", "~/.local/bin", "~/.config/systemd/user"]);
 
-    // 6. Write relay script
-    let relay_content = generate_relay_script(&npiperelay_wsl, &socket_path);
+    // 7. Write relay script
+    let relay_content = generate_relay_script(&provider, &relay_wsl, &socket_path);
     wsl_service::wsl_write_file(distro, &format!("~/{}", RELAY_SCRIPT_PATH), &relay_content)?;
-
-    // Make executable
     let _ = wsl_service::run_in_wsl(distro, &["chmod", "+x", &format!("~/{}", RELAY_SCRIPT_PATH)]);
 
-    // 7. Write systemd unit
-    let unit_content = generate_systemd_unit(&socket_path);
+    // 8. Write systemd unit
+    let unit_content = generate_systemd_unit(&provider, &socket_path);
     wsl_service::wsl_write_file(distro, &format!("~/{}", SYSTEMD_UNIT_PATH), &unit_content)?;
 
-    // 8. Reload + enable + start
+    // 9. Reload + enable + start
     let _ = wsl_service::run_in_wsl(distro, &["systemctl", "--user", "daemon-reload"]);
     let enable_result = wsl_service::run_in_wsl(
         distro,
@@ -217,36 +272,27 @@ pub fn bootstrap_distro(
         )));
     }
 
-    // 9. Configure SSH_AUTH_SOCK in bashrc (idempotent)
+    // 10. Configure SSH_AUTH_SOCK in bashrc (idempotent)
     configure_shell_env(distro, &socket_path)?;
 
     // Brief pause for service to create socket
     std::thread::sleep(std::time::Duration::from_millis(500));
 
-    // Return current status
     Ok(get_distro_status(distro, config))
 }
 
 /// Remove the bridge from a WSL distro
 pub fn teardown_distro(distro: &str) -> Result<(), MazeSshError> {
-    // Stop + disable service
     let _ = wsl_service::run_in_wsl(
         distro,
         &["systemctl", "--user", "disable", "--now", "maze-ssh-relay.service"],
     );
-
-    // Remove files
     let _ = wsl_service::run_in_wsl(
         distro,
         &["rm", "-f", &format!("~/{}", RELAY_SCRIPT_PATH), &format!("~/{}", SYSTEMD_UNIT_PATH)],
     );
-
-    // Reload systemd
     let _ = wsl_service::run_in_wsl(distro, &["systemctl", "--user", "daemon-reload"]);
-
-    // Remove SSH_AUTH_SOCK from bashrc
     remove_shell_env(distro)?;
-
     Ok(())
 }
 
@@ -299,8 +345,8 @@ pub fn restart_relay(distro: &str) -> Result<(), MazeSshError> {
 /// Get full bridge status for a single distro
 pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeStatus {
     let socket_path = resolve_socket_path(config, distro);
+    let provider = resolve_provider(config, distro);
 
-    // Check if distro is WSL2 and running
     let (wsl_version, distro_running) = match wsl_service::list_distros() {
         Ok(distros) => match distros.iter().find(|d| d.name == distro) {
             Some(d) => (d.version, d.state == "Running"),
@@ -311,13 +357,13 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
 
     let enabled = config.distros.iter().any(|d| d.distro_name == distro && d.enabled);
 
-    // Short-circuit if distro isn't running
     if !distro_running {
         return DistroBridgeStatus {
             distro_name: distro.to_string(),
             wsl_version,
             distro_running: false,
             enabled,
+            provider: provider.clone(),
             relay_installed: false,
             service_active: false,
             socket_exists: false,
@@ -345,17 +391,15 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         .map(|o| o.success)
         .unwrap_or(false);
 
-    // ssh-add -l: exit 0 = keys listed, exit 1 = agent reachable but no keys, exit 2 = unreachable
     let agent_reachable = if socket_exists {
         wsl_service::run_in_wsl(
             distro,
             &["env", &format!("SSH_AUTH_SOCK={}", socket_path), "ssh-add", "-l"],
         )
         .map(|o| {
-            // Exit code 0 (keys) or 1 (no keys but agent responding) = reachable
-            o.success || o.stderr.contains("no identities")
+            o.success
+                || o.stderr.contains("no identities")
                 || o.stdout.contains("no identities")
-                // Also check raw exit status via output content patterns
                 || !o.stderr.contains("Error connecting")
                     && !o.stderr.contains("Could not open")
         })
@@ -364,7 +408,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         false
     };
 
-    let error = if !socat_installed {
+    let error = if provider.needs_socat() && !socat_installed {
         Some("socat not installed".to_string())
     } else if !systemd_available {
         Some("systemd not available".to_string())
@@ -373,7 +417,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
     } else if service_active && !socket_exists {
         Some("Service active but socket not found".to_string())
     } else if socket_exists && !agent_reachable {
-        Some("Socket exists but agent unreachable — Windows agent may be stopped".to_string())
+        Some("Socket exists but agent unreachable — agent may be stopped".to_string())
     } else {
         None
     };
@@ -383,6 +427,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         wsl_version,
         distro_running,
         enabled,
+        provider,
         relay_installed,
         service_active,
         socket_exists,
@@ -396,52 +441,44 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
 /// Get full bridge overview across all WSL2 distros
 pub fn get_bridge_overview(config: &BridgeConfig) -> BridgeOverview {
     let wsl_available = wsl_service::is_wsl_available();
-
-    if !wsl_available {
-        return BridgeOverview {
-            wsl_available: false,
-            npiperelay_installed: is_npiperelay_installed(),
-            windows_agent_running: is_windows_agent_running(),
-            distros: Vec::new(),
-        };
-    }
-
     let npiperelay_installed = is_npiperelay_installed();
     let windows_agent_running = is_windows_agent_running();
+    let provider_statuses = provider_health::check_all_providers();
+    let relay_binaries = check_relay_binaries();
 
-    let distros = match wsl_service::list_distros() {
-        Ok(all) => all
-            .iter()
-            .filter(|d| d.version == 2)
-            .map(|d| get_distro_status(&d.name, config))
-            .collect(),
-        Err(_) => Vec::new(),
+    let distros = if wsl_available {
+        match wsl_service::list_distros() {
+            Ok(all) => all
+                .iter()
+                .filter(|d| d.version == 2)
+                .map(|d| get_distro_status(&d.name, config))
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    } else {
+        Vec::new()
     };
 
     BridgeOverview {
         wsl_available,
         npiperelay_installed,
         windows_agent_running,
+        provider_statuses,
+        relay_binaries,
         distros,
     }
 }
 
 // ── Shell env management ──
 
-/// Configure SSH_AUTH_SOCK in ~/.bashrc and ~/.profile (idempotent, marker-based)
 fn configure_shell_env(distro: &str, socket_path: &str) -> Result<(), MazeSshError> {
     let block = generate_bashrc_block(socket_path);
 
     for rc_file in &["~/.bashrc", "~/.profile"] {
-        // Read current content
         let current = wsl_service::run_in_wsl(distro, &["cat", rc_file])
             .map(|o| o.stdout)
             .unwrap_or_default();
-
-        // Remove existing block if present
         let cleaned = remove_marker_block(&current);
-
-        // Append new block
         let new_content = format!("{}\n{}", cleaned.trim_end(), block);
         wsl_service::wsl_write_file(distro, rc_file, &new_content)?;
     }
@@ -449,7 +486,6 @@ fn configure_shell_env(distro: &str, socket_path: &str) -> Result<(), MazeSshErr
     Ok(())
 }
 
-/// Remove the SSH_AUTH_SOCK block from shell profiles
 fn remove_shell_env(distro: &str) -> Result<(), MazeSshError> {
     for rc_file in &["~/.bashrc", "~/.profile"] {
         let current = wsl_service::run_in_wsl(distro, &["cat", rc_file])
@@ -464,7 +500,6 @@ fn remove_shell_env(distro: &str) -> Result<(), MazeSshError> {
     Ok(())
 }
 
-/// Remove content between (and including) bridge markers
 fn remove_marker_block(content: &str) -> String {
     let mut result = String::new();
     let mut inside_block = false;
@@ -520,10 +555,39 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_relay_script() {
-        let script = generate_relay_script("/mnt/c/Users/test/.maze-ssh/bin/npiperelay.exe", "/tmp/maze-ssh-agent.sock");
+    fn test_generate_relay_script_openssh() {
+        let script = generate_relay_script(
+            &BridgeProvider::WindowsOpenSsh,
+            "/mnt/c/Users/test/.maze-ssh/bin/npiperelay.exe",
+            "/tmp/maze-ssh-agent.sock",
+        );
         assert!(script.contains("socat UNIX-LISTEN"));
-        assert!(script.contains("npiperelay.exe"));
+        assert!(script.contains("//./pipe/openssh-ssh-agent"));
         assert!(script.contains("/tmp/maze-ssh-agent.sock"));
+    }
+
+    #[test]
+    fn test_generate_relay_script_onepassword() {
+        let script = generate_relay_script(
+            &BridgeProvider::OnePassword,
+            "/mnt/c/Users/test/.maze-ssh/bin/npiperelay.exe",
+            "/tmp/maze-ssh-agent.sock",
+        );
+        assert!(script.contains("socat UNIX-LISTEN"));
+        assert!(script.contains("//./pipe/op-ssh-sign-pipe"));
+        assert!(script.contains("1Password"));
+    }
+
+    #[test]
+    fn test_generate_relay_script_pageant() {
+        let script = generate_relay_script(
+            &BridgeProvider::Pageant,
+            "/mnt/c/Users/test/.maze-ssh/bin/wsl-ssh-pageant.exe",
+            "/tmp/maze-ssh-agent.sock",
+        );
+        assert!(!script.contains("socat"));
+        assert!(script.contains("wsl-ssh-pageant.exe"));
+        assert!(script.contains("--wsl"));
+        assert!(script.contains("Pageant"));
     }
 }
