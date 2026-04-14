@@ -12,12 +12,19 @@ import {
   AlertTriangle,
   Loader2,
   ExternalLink,
+  Download,
+  Stethoscope,
+  FileText,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
+import { commands } from "@/lib/tauri-commands";
 import { useBridgeStore } from "@/stores/bridgeStore";
-import type { BridgeProvider, DistroBridgeStatus, ProviderStatus } from "@/types";
+import type { BridgeProvider, DistroBridgeStatus, ProviderStatus, RelayMode } from "@/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ProviderSelector } from "./ProviderSelector";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 
 const PROVIDER_LABELS: Record<string, string> = {
   "windows-open-ssh": "OpenSSH",
@@ -35,9 +42,15 @@ export function WslBridgePanel() {
     overview,
     providers,
     recommendedProvider,
+    binaryVersions,
+    downloadProgress,
+    diagnostics,
     loading,
     fetchOverview,
     fetchRecommended,
+    fetchBinaryVersions,
+    downloadBinary,
+    runDiagnostics,
     bootstrapDistro,
     teardownDistro,
     startRelay,
@@ -52,6 +65,7 @@ export function WslBridgePanel() {
   useEffect(() => {
     fetchOverview();
     fetchRecommended();
+    fetchBinaryVersions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -67,8 +81,8 @@ export function WslBridgePanel() {
     }
   };
 
-  const handleBootstrap = (distro: string) =>
-    handleAction(`Setup bridge for ${distro}`, () => bootstrapDistro(distro).then(() => {}));
+  const handleBootstrap = (distro: string, relayMode?: RelayMode) =>
+    handleAction(`Setup bridge for ${distro}`, () => bootstrapDistro(distro, relayMode).then(() => {}));
 
   const handleTeardown = (distro: string) =>
     handleAction(`Removed bridge from ${distro}`, () => teardownDistro(distro));
@@ -91,7 +105,12 @@ export function WslBridgePanel() {
         overview={overview}
         providers={providers}
         loading={loading}
+        binaryVersions={binaryVersions}
+        downloadProgress={downloadProgress}
         onRefresh={() => fetchOverview()}
+        onDownload={(binary) =>
+          handleAction(`Downloading ${binary}`, () => downloadBinary(binary))
+        }
       />
 
       {/* Distro list */}
@@ -112,7 +131,8 @@ export function WslBridgePanel() {
                 providers={providers}
                 recommendedProvider={recommendedProvider}
                 actionLoading={actionLoading}
-                onBootstrap={() => handleBootstrap(distro.distro_name)}
+                diagnosticsResult={diagnostics[distro.distro_name] ?? null}
+                onBootstrap={(relayMode) => handleBootstrap(distro.distro_name, relayMode)}
                 onStart={() =>
                   handleAction(`Started relay in ${distro.distro_name}`, () => startRelay(distro.distro_name))
                 }
@@ -133,6 +153,9 @@ export function WslBridgePanel() {
                     enabled ? "Agent forwarding enabled" : "Agent forwarding disabled",
                     () => setAgentForwarding(distro.distro_name, enabled),
                   )
+                }
+                onRunDiagnostics={() =>
+                  handleAction(`Diagnostics for ${distro.distro_name}`, () => runDiagnostics(distro.distro_name))
                 }
                 onRefresh={() => fetchOverview()}
               />
@@ -164,12 +187,18 @@ function PrerequisitesCard({
   overview,
   providers,
   loading,
+  binaryVersions,
+  downloadProgress,
   onRefresh,
+  onDownload,
 }: {
   overview: ReturnType<typeof useBridgeStore>["overview"];
   providers: ProviderStatus[];
   loading: boolean;
+  binaryVersions: ReturnType<typeof useBridgeStore>["binaryVersions"];
+  downloadProgress: Record<string, number>;
   onRefresh: () => void;
+  onDownload: (binary: string) => void;
 }) {
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -216,14 +245,54 @@ function PrerequisitesCard({
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 Relay Binaries
               </span>
-              {overview.relay_binaries.map((b) => (
-                <StatusRow
-                  key={b.binary}
-                  label={b.binary === "Npiperelay" ? "npiperelay.exe" : "wsl-ssh-pageant.exe"}
-                  ok={b.installed}
-                  hint={!b.installed ? `Place at ${b.path}` : undefined}
-                />
-              ))}
+              {overview.relay_binaries.map((b) => {
+                const binaryKey = b.binary === "Npiperelay" ? "npiperelay" : "wsl-ssh-pageant";
+                const progress = downloadProgress[binaryKey];
+                const isDownloading = progress !== undefined && progress < 100;
+
+                return (
+                  <div key={b.binary}>
+                    <div className="flex items-center gap-2 text-xs">
+                      {b.installed ? (
+                        <CheckCircle size={13} className="text-success shrink-0" />
+                      ) : (
+                        <XCircle size={13} className="text-destructive shrink-0" />
+                      )}
+                      <span className={b.installed ? "text-foreground" : "text-muted-foreground"}>
+                        {b.binary === "Npiperelay" ? "npiperelay.exe" : "wsl-ssh-pageant.exe"}
+                      </span>
+                      {b.installed && binaryVersions && (
+                        <span className="text-[10px] text-muted-foreground/50">
+                          {b.binary === "Npiperelay" ? binaryVersions.npiperelay : binaryVersions.wsl_ssh_pageant}
+                        </span>
+                      )}
+                      {!b.installed && !isDownloading && (
+                        <button
+                          type="button"
+                          onClick={() => onDownload(binaryKey)}
+                          className="ml-auto px-2 py-0.5 text-[10px] font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1"
+                        >
+                          <Download size={9} />
+                          Download
+                        </button>
+                      )}
+                    </div>
+                    {isDownloading && (
+                      <div className="ml-5 mt-1">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground w-8 text-right">{progress}%</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -253,6 +322,7 @@ function DistroCard({
   providers,
   recommendedProvider,
   actionLoading,
+  diagnosticsResult,
   onBootstrap,
   onStart,
   onStop,
@@ -260,22 +330,51 @@ function DistroCard({
   onTeardown,
   onProviderChange,
   onForwardingChange,
+  onRunDiagnostics,
   onRefresh,
 }: {
   distro: DistroBridgeStatus;
   providers: ProviderStatus[];
   recommendedProvider: BridgeProvider | null;
   actionLoading: string | null;
-  onBootstrap: () => void;
+  diagnosticsResult: ReturnType<typeof useBridgeStore>["diagnostics"][string] | null;
+  onBootstrap: (relayMode?: RelayMode) => void;
   onStart: () => void;
   onStop: () => void;
   onRestart: () => void;
   onTeardown: () => void;
   onProviderChange: (provider: BridgeProvider) => void;
   onForwardingChange: (enabled: boolean) => void;
+  onRunDiagnostics: () => void;
   onRefresh: () => void;
 }) {
   const isActionRunning = actionLoading !== null;
+  const [relayMode, setRelayMode] = useState<RelayMode>("systemd");
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [logs, setLogs] = useState<string>("");
+  const [logLines, setLogLines] = useState<number>(50);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const handleLoadLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const output = await commands.getRelayLogs(distro.distro_name, logLines);
+      setLogs(output);
+    } catch (err) {
+      setLogs(`Error loading logs: ${String(err)}`);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const toggleLogs = () => {
+    const next = !showLogs;
+    setShowLogs(next);
+    if (next && !logs) {
+      handleLoadLogs();
+    }
+  };
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -297,6 +396,11 @@ function DistroCard({
           {distro.relay_installed && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-secondary text-muted-foreground">
               {providerLabel(distro.provider)}
+            </span>
+          )}
+          {distro.relay_mode === "daemon" && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-secondary text-muted-foreground">
+              daemon
             </span>
           )}
         </div>
@@ -334,25 +438,60 @@ function DistroCard({
                 hint={!distro.socat_installed ? "sudo apt install socat" : undefined}
               />
             )}
-            <StatusRow
-              label="systemd available"
-              ok={distro.systemd_available}
-              hint={!distro.systemd_available ? "Add systemd=true to /etc/wsl.conf" : undefined}
-            />
+            {/* Systemd/Daemon relay mode selector */}
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[11px] text-muted-foreground">Relay mode:</span>
+              <div className="flex rounded-lg overflow-hidden border border-border">
+                <button
+                  type="button"
+                  onClick={() => setRelayMode("systemd")}
+                  disabled={isActionRunning}
+                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    relayMode === "systemd"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  Systemd
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRelayMode("daemon")}
+                  disabled={isActionRunning}
+                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    relayMode === "daemon"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  Daemon
+                </button>
+              </div>
+              {relayMode === "daemon" && (
+                <span className="text-[9px] text-muted-foreground/60">No systemd required</span>
+              )}
+            </div>
+            {relayMode === "systemd" && (
+              <StatusRow
+                label="systemd available"
+                ok={distro.systemd_available}
+                hint={!distro.systemd_available ? "Add systemd=true to /etc/wsl.conf" : undefined}
+              />
+            )}
           </div>
 
           <button
             type="button"
-            onClick={onBootstrap}
+            onClick={() => onBootstrap(relayMode)}
             disabled={
               isActionRunning ||
               (distro.provider.type !== "pageant" && !distro.socat_installed) ||
-              !distro.systemd_available
+              (relayMode === "systemd" && !distro.systemd_available)
             }
             className="px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5"
           >
             {isActionRunning ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
-            Setup Bridge
+            Setup Bridge{relayMode === "daemon" ? " (Daemon Mode)" : ""}
           </button>
         </div>
       )}
@@ -433,6 +572,18 @@ function DistroCard({
               </button>
             )}
 
+            <button
+              type="button"
+              onClick={() => {
+                onRunDiagnostics();
+                setShowDiagnostics(true);
+              }}
+              disabled={isActionRunning}
+              className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-secondary hover:bg-accent disabled:opacity-50 flex items-center gap-1"
+            >
+              <Stethoscope size={10} /> Diagnostics
+            </button>
+
             <div className="flex-1" />
 
             <button
@@ -443,6 +594,82 @@ function DistroCard({
             >
               <Trash2 size={10} /> Remove
             </button>
+          </div>
+
+          {/* Diagnostics panel */}
+          {showDiagnostics && diagnosticsResult && (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setShowDiagnostics(false)}
+                className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground flex items-center gap-1"
+              >
+                <ChevronUp size={10} /> Hide diagnostics
+              </button>
+              <DiagnosticsPanel result={diagnosticsResult} />
+            </div>
+          )}
+
+          {/* Log viewer */}
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={toggleLogs}
+              className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground flex items-center gap-1"
+            >
+              <FileText size={10} />
+              {showLogs ? (
+                <>
+                  <ChevronUp size={10} /> Hide logs
+                </>
+              ) : (
+                <>
+                  <ChevronDown size={10} /> View logs
+                </>
+              )}
+            </button>
+            {showLogs && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-lg overflow-hidden border border-border">
+                    {([20, 50, 100] as const).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setLogLines(n);
+                          setLogs("");
+                          setTimeout(handleLoadLogs, 0);
+                        }}
+                        className={`px-2 py-0.5 text-[10px] transition-colors ${
+                          logLines === n
+                            ? "bg-secondary text-foreground"
+                            : "bg-transparent text-muted-foreground hover:bg-secondary/50"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLoadLogs}
+                    disabled={logsLoading}
+                    className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                    title="Refresh logs"
+                  >
+                    {logsLoading ? (
+                      <Loader2 size={11} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={11} />
+                    )}
+                  </button>
+                </div>
+                <pre className="text-[10px] font-mono bg-black/20 dark:bg-black/40 rounded-lg p-2 overflow-auto max-h-48 whitespace-pre-wrap text-foreground/70">
+                  {logsLoading ? "Loading..." : logs || "(no output)"}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       )}

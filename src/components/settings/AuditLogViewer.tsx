@@ -3,18 +3,22 @@ import { Shield, RefreshCw } from "lucide-react";
 import { commands } from "@/lib/tauri-commands";
 import type { AuditEntry } from "@/types";
 
+type FilterMode = "all" | "bridge";
+
 export function AuditLogViewer() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [filter, setFilter] = useState<FilterMode>("all");
   const PAGE_SIZE = 50;
 
-  const loadLogs = async (reset = false) => {
+  const loadLogs = async (reset = false, mode: FilterMode = filter) => {
     setLoading(true);
     try {
       const newOffset = reset ? 0 : offset;
-      const entries = await commands.getAuditLogs(PAGE_SIZE, newOffset);
+      const actionFilter = mode === "bridge" ? "bridge_" : undefined;
+      const entries = await commands.getAuditLogs(PAGE_SIZE, newOffset, actionFilter);
       if (reset) {
         setLogs(entries);
         setOffset(PAGE_SIZE);
@@ -30,9 +34,19 @@ export function AuditLogViewer() {
     }
   };
 
+  const handleFilterChange = (mode: FilterMode) => {
+    setFilter(mode);
+    loadLogs(true, mode);
+  };
+
   useEffect(() => {
     loadLogs(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Show distro/provider columns when in bridge filter or when any row has them
+  const showBridgeCols =
+    filter === "bridge" || logs.some((l) => l.distro != null || l.provider != null);
 
   return (
     <div className="space-y-4">
@@ -41,15 +55,34 @@ export function AuditLogViewer() {
           <Shield size={16} className="text-primary" />
           <h3 className="text-sm font-semibold">Audit Log</h3>
         </div>
-        <button
-          type="button"
-          onClick={() => loadLogs(true)}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent disabled:opacity-50"
-        >
-          <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Filter tabs */}
+          <div className="flex rounded-lg overflow-hidden border border-border">
+            {(["all", "bridge"] as FilterMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => handleFilterChange(mode)}
+                className={`px-2.5 py-1 text-[11px] font-medium capitalize transition-colors ${
+                  filter === mode
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {mode === "all" ? "All" : "Bridge"}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => loadLogs(true)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {logs.length === 0 && !loading && (
@@ -64,6 +97,12 @@ export function AuditLogViewer() {
                 <th className="text-left px-3 py-2 font-medium">Time</th>
                 <th className="text-left px-3 py-2 font-medium">Action</th>
                 <th className="text-left px-3 py-2 font-medium">Profile</th>
+                {showBridgeCols && (
+                  <>
+                    <th className="text-left px-3 py-2 font-medium">Distro</th>
+                    <th className="text-left px-3 py-2 font-medium">Provider</th>
+                  </>
+                )}
                 <th className="text-left px-3 py-2 font-medium">Result</th>
               </tr>
             </thead>
@@ -81,6 +120,28 @@ export function AuditLogViewer() {
                   <td className="px-3 py-2 text-muted-foreground">
                     {log.profile_name ?? "—"}
                   </td>
+                  {showBridgeCols && (
+                    <>
+                      <td className="px-3 py-2">
+                        {log.distro ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">
+                            {log.distro}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {log.provider ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium">
+                            {log.provider}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
+                      </td>
+                    </>
+                  )}
                   <td className="px-3 py-2 truncate max-w-48">{log.result}</td>
                 </tr>
               ))}

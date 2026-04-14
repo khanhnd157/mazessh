@@ -1,17 +1,33 @@
 import { create } from "zustand";
+import { listen } from "@tauri-apps/api/event";
 import { commands } from "@/lib/tauri-commands";
-import type { BridgeOverview, BridgeProvider, DistroBridgeStatus, ProviderStatus } from "@/types";
+import type {
+  BinaryVersion,
+  BridgeOverview,
+  BridgeProvider,
+  DiagnosticsResult,
+  DistroBridgeStatus,
+  DownloadProgress,
+  ProviderStatus,
+  RelayMode,
+} from "@/types";
 
 interface BridgeStore {
   overview: BridgeOverview | null;
   providers: ProviderStatus[];
   recommendedProvider: BridgeProvider | null;
+  binaryVersions: BinaryVersion | null;
+  downloadProgress: Record<string, number>;
+  diagnostics: Record<string, DiagnosticsResult>;
   loading: boolean;
 
   fetchOverview: () => Promise<void>;
   fetchProviders: () => Promise<void>;
   fetchRecommended: () => Promise<void>;
-  bootstrapDistro: (distro: string) => Promise<DistroBridgeStatus>;
+  fetchBinaryVersions: () => Promise<void>;
+  downloadBinary: (binary: string) => Promise<void>;
+  runDiagnostics: (distro: string) => Promise<void>;
+  bootstrapDistro: (distro: string, relayMode?: RelayMode) => Promise<DistroBridgeStatus>;
   teardownDistro: (distro: string) => Promise<void>;
   startRelay: (distro: string) => Promise<void>;
   stopRelay: (distro: string) => Promise<void>;
@@ -25,6 +41,9 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   overview: null,
   providers: [],
   recommendedProvider: null,
+  binaryVersions: null,
+  downloadProgress: {},
+  diagnostics: {},
   loading: false,
 
   fetchOverview: async () => {
@@ -51,8 +70,47 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
     }
   },
 
-  bootstrapDistro: async (distro: string) => {
-    const status = await commands.bootstrapBridge(distro);
+  fetchBinaryVersions: async () => {
+    try {
+      const versions = await commands.getRelayBinaryVersions();
+      set({ binaryVersions: versions });
+    } catch {
+      set({ binaryVersions: null });
+    }
+  },
+
+  downloadBinary: async (binary: string) => {
+    // Listen for progress events before starting download
+    const unlisten = await listen<DownloadProgress>("binary-download-progress", (event) => {
+      const { binary: b, percent, status } = event.payload;
+      set((state) => ({
+        downloadProgress: {
+          ...state.downloadProgress,
+          [b]: status === "done" ? 100 : percent,
+        },
+      }));
+    });
+
+    try {
+      set((state) => ({ downloadProgress: { ...state.downloadProgress, [binary]: 0 } }));
+      await commands.downloadRelayBinary(binary);
+      // Refresh versions after download
+      await get().fetchBinaryVersions();
+      await get().fetchOverview();
+    } finally {
+      unlisten();
+    }
+  },
+
+  runDiagnostics: async (distro: string) => {
+    const result = await commands.runBridgeDiagnostics(distro);
+    set((state) => ({
+      diagnostics: { ...state.diagnostics, [distro]: result },
+    }));
+  },
+
+  bootstrapDistro: async (distro: string, relayMode?: RelayMode) => {
+    const status = await commands.bootstrapBridge(distro, relayMode);
     await get().fetchOverview();
     return status;
   },

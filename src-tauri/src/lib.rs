@@ -203,6 +203,10 @@ pub fn run() {
             commands::bridge::set_distro_provider,
             commands::bridge::get_recommended_provider,
             commands::bridge::set_agent_forwarding,
+            commands::bridge::run_bridge_diagnostics,
+            commands::bridge::get_relay_logs,
+            commands::bridge::get_relay_binary_versions,
+            commands::bridge::download_relay_binary,
             // Tray
             update_tray_tooltip,
         ])

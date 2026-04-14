@@ -2,6 +2,19 @@ use serde::{Deserialize, Serialize};
 
 use super::bridge_provider::{BridgeProvider, ProviderStatus, RelayBinaryStatus};
 
+// ── Relay mode ──
+
+/// How the relay service is managed in WSL
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RelayMode {
+    /// Managed via systemd --user (recommended, requires systemd in WSL)
+    #[default]
+    Systemd,
+    /// Background daemon launched from .bashrc (no systemd required)
+    Daemon,
+}
+
 // ── Persisted config (stored at ~/.maze-ssh/bridge.json) ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -23,6 +36,9 @@ pub struct DistroBridgeConfig {
     /// Allow SSH agent forwarding to remote hosts (default: false for security)
     #[serde(default)]
     pub allow_agent_forwarding: bool,
+    /// How the relay service is managed (default: Systemd)
+    #[serde(default)]
+    pub relay_mode: RelayMode,
 }
 
 // ── Runtime types (returned to frontend) ──
@@ -61,9 +77,34 @@ pub struct DistroBridgeStatus {
     pub socat_installed: bool,
     /// systemd --user functional in distro
     pub systemd_available: bool,
+    /// How the relay service is managed
+    #[serde(default)]
+    pub relay_mode: RelayMode,
     /// Last error encountered during checks, if any
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+// ── Diagnostics ──
+
+/// Result of a step-by-step bridge connectivity test
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticsResult {
+    pub distro: String,
+    pub steps: Vec<DiagnosticsStep>,
+    /// Fingerprint lines from `ssh-add -l` through the bridged socket
+    pub keys_visible: Vec<String>,
+    /// Human-readable remediation hints for the first failing step
+    pub suggestions: Vec<String>,
+}
+
+/// One step in a bridge diagnostics run
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticsStep {
+    pub name: String,
+    pub passed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// Full bridge overview for the frontend dashboard
