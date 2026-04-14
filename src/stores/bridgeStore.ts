@@ -5,10 +5,12 @@ import type { BridgeOverview, BridgeProvider, DistroBridgeStatus, ProviderStatus
 interface BridgeStore {
   overview: BridgeOverview | null;
   providers: ProviderStatus[];
+  recommendedProvider: BridgeProvider | null;
   loading: boolean;
 
   fetchOverview: () => Promise<void>;
   fetchProviders: () => Promise<void>;
+  fetchRecommended: () => Promise<void>;
   bootstrapDistro: (distro: string) => Promise<DistroBridgeStatus>;
   teardownDistro: (distro: string) => Promise<void>;
   startRelay: (distro: string) => Promise<void>;
@@ -16,11 +18,13 @@ interface BridgeStore {
   restartRelay: (distro: string) => Promise<void>;
   setEnabled: (distro: string, enabled: boolean) => Promise<void>;
   setDistroProvider: (distro: string, provider: BridgeProvider) => Promise<void>;
+  setAgentForwarding: (distro: string, enabled: boolean) => Promise<void>;
 }
 
 export const useBridgeStore = create<BridgeStore>((set, get) => ({
   overview: null,
   providers: [],
+  recommendedProvider: null,
   loading: false,
 
   fetchOverview: async () => {
@@ -36,6 +40,15 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   fetchProviders: async () => {
     const providers = await commands.listBridgeProviders();
     set({ providers });
+  },
+
+  fetchRecommended: async () => {
+    try {
+      const rec = await commands.getRecommendedProvider();
+      set({ recommendedProvider: rec });
+    } catch {
+      set({ recommendedProvider: null });
+    }
   },
 
   bootstrapDistro: async (distro: string) => {
@@ -71,6 +84,11 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
 
   setDistroProvider: async (distro: string, provider: BridgeProvider) => {
     await commands.setDistroProvider(distro, provider);
+    await get().fetchOverview();
+  },
+
+  setAgentForwarding: async (distro: string, enabled: boolean) => {
+    await commands.setAgentForwarding(distro, enabled);
     await get().fetchOverview();
   },
 }));

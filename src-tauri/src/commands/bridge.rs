@@ -3,8 +3,20 @@ use tauri::State;
 use crate::error::MazeSshError;
 use crate::models::bridge::*;
 use crate::models::bridge_provider::*;
-use crate::services::{bridge_service, provider_health, wsl_service};
+use crate::models::security::AuditEntry;
+use crate::services::{audit_service, bridge_service, provider_health, wsl_service};
 use crate::state::AppState;
+
+fn log_bridge_audit(action: &str, distro: &str, provider: &str, result: &str) {
+    audit_service::append_log(&AuditEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        action: format!("bridge_{}", action),
+        profile_name: None,
+        result: result.to_string(),
+        distro: Some(distro.to_string()),
+        provider: Some(provider.to_string()),
+    });
+}
 
 use super::security::ensure_unlocked;
 
@@ -43,6 +55,7 @@ pub fn bootstrap_bridge(
             enabled: true,
             socket_path: None,
             provider: BridgeProvider::default(),
+            allow_agent_forwarding: false,
         });
     } else {
         // Mark as enabled
@@ -51,10 +64,15 @@ pub fn bootstrap_bridge(
         }
     }
 
-    let result = bridge_service::bootstrap_distro(&distro, &config)?;
+    let provider_name = config.distros.iter()
+        .find(|d| d.distro_name == distro)
+        .map(|d| d.provider.display_name().to_string())
+        .unwrap_or_default();
 
-    // Save config on success
+    let result = bridge_service::bootstrap_distro(&distro, &config)?;
     bridge_service::save_bridge_config(&config)?;
+
+    log_bridge_audit("bootstrap", &distro, &provider_name, "Bridge setup completed");
 
     Ok(result)
 }
@@ -69,10 +87,15 @@ pub fn teardown_bridge(
 
     bridge_service::teardown_distro(&distro)?;
 
-    // Remove from config
     let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
+    let provider_name = config.distros.iter()
+        .find(|d| d.distro_name == distro)
+        .map(|d| d.provider.display_name().to_string())
+        .unwrap_or_default();
     config.distros.retain(|d| d.distro_name != distro);
     bridge_service::save_bridge_config(&config)?;
+
+    log_bridge_audit("teardown", &distro, &provider_name, "Bridge removed");
 
     Ok(())
 }
@@ -84,7 +107,9 @@ pub fn start_bridge_relay(
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    bridge_service::start_relay(&distro)
+    bridge_service::start_relay(&distro)?;
+    log_bridge_audit("start", &distro, "", "Relay started");
+    Ok(())
 }
 
 /// Stop the relay service in a WSL distro
@@ -94,7 +119,9 @@ pub fn stop_bridge_relay(
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    bridge_service::stop_relay(&distro)
+    bridge_service::stop_relay(&distro)?;
+    log_bridge_audit("stop", &distro, "", "Relay stopped");
+    Ok(())
 }
 
 /// Restart the relay service in a WSL distro
@@ -104,7 +131,9 @@ pub fn restart_bridge_relay(
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    bridge_service::restart_relay(&distro)
+    bridge_service::restart_relay(&distro)?;
+    log_bridge_audit("restart", &distro, "", "Relay restarted");
+    Ok(())
 }
 
 /// Get detailed bridge status for one distro
@@ -136,6 +165,7 @@ pub fn set_bridge_enabled(
             enabled: true,
             socket_path: None,
             provider: BridgeProvider::default(),
+            allow_agent_forwarding: false,
         });
     }
 
@@ -179,9 +209,52 @@ pub fn set_distro_provider(
             enabled: false,
             socket_path: None,
             provider,
+            allow_agent_forwarding: false,
         });
     }
 
     bridge_service::save_bridge_config(&config)?;
+    Ok(())
+}
+
+/// Get the recommended provider based on availability and security scoring
+#[tauri::command]
+pub fn get_recommended_provider(
+    state: State<'_, AppState>,
+) -> Result<Option<BridgeProvider>, MazeSshError> {
+    ensure_unlocked(&state)?;
+    let statuses = provider_health::check_all_providers();
+    Ok(provider_health::recommend_provider(&statuses))
+}
+
+/// Enable or disable SSH agent forwarding for a distro
+#[tauri::command]
+pub fn set_agent_forwarding(
+    distro: String,
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+
+    let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
+
+    if let Some(d) = config.distros.iter_mut().find(|d| d.distro_name == distro) {
+        d.allow_agent_forwarding = enabled;
+    }
+
+    bridge_service::save_bridge_config(&config)?;
+
+    // Apply live if distro has a bridge installed
+    if wsl_service::wsl_file_exists(&distro, &format!("~/{}", crate::models::bridge::RELAY_SCRIPT_PATH)) {
+        bridge_service::configure_agent_forwarding(&distro, enabled)?;
+    }
+
+    log_bridge_audit(
+        "forwarding",
+        &distro,
+        "",
+        if enabled { "Agent forwarding enabled" } else { "Agent forwarding disabled" },
+    );
+
     Ok(())
 }

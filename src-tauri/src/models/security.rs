@@ -20,12 +20,22 @@ impl Default for SecuritySettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuditEntry {
+    #[serde(default)]
     pub timestamp: String,
+    #[serde(default)]
     pub action: String,
+    #[serde(default)]
     pub profile_name: Option<String>,
+    #[serde(default)]
     pub result: String,
+    /// WSL distro name (for bridge operations)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distro: Option<String>,
+    /// Provider display name (for bridge operations)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

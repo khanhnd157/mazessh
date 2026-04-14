@@ -144,4 +144,8 @@ export const commands = {
     invoke<ProviderStatus[]>("list_bridge_providers"),
   setDistroProvider: (distro: string, provider: BridgeProvider) =>
     invoke<void>("set_distro_provider", { distro, provider }),
+  getRecommendedProvider: () =>
+    invoke<BridgeProvider | null>("get_recommended_provider"),
+  setAgentForwarding: (distro: string, enabled: boolean) =>
+    invoke<void>("set_agent_forwarding", { distro, enabled }),
 };

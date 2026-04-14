@@ -75,7 +75,7 @@ pub fn read_logs(
         .filter_map(|line| serde_json::from_str::<AuditEntry>(&line).ok())
         .filter(|entry| {
             action_filter
-                .map(|f| entry.action == f)
+                .map(|f| entry.action == f || entry.action.starts_with(f))
                 .unwrap_or(true)
         })
         .collect();

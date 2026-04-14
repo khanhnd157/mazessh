@@ -11,6 +11,11 @@ pub enum BridgeProvider {
     OnePassword,
     /// Pageant-compatible agent (PuTTY, KeeAgent, GPG4Win) — WM_COPYDATA protocol
     Pageant,
+    /// User-defined provider with a custom Windows named pipe path
+    Custom {
+        #[serde(default)]
+        pipe_path: String,
+    },
 }
 
 impl Default for BridgeProvider {
@@ -21,27 +26,37 @@ impl Default for BridgeProvider {
 
 impl BridgeProvider {
     /// Human-readable display name for UI
-    pub fn display_name(&self) -> &'static str {
+    pub fn display_name(&self) -> &str {
         match self {
             BridgeProvider::WindowsOpenSsh => "Windows OpenSSH",
             BridgeProvider::OnePassword => "1Password",
             BridgeProvider::Pageant => "Pageant",
+            BridgeProvider::Custom { .. } => "Custom",
         }
     }
 
-    /// The Windows named pipe path this provider uses (None for non-pipe providers)
-    pub fn named_pipe(&self) -> Option<&'static str> {
+    /// The Windows named pipe path this provider uses (None for non-pipe providers like Pageant)
+    pub fn named_pipe(&self) -> Option<String> {
         match self {
-            BridgeProvider::WindowsOpenSsh => Some("//./pipe/openssh-ssh-agent"),
-            BridgeProvider::OnePassword => Some("//./pipe/op-ssh-sign-pipe"),
+            BridgeProvider::WindowsOpenSsh => Some("//./pipe/openssh-ssh-agent".to_string()),
+            BridgeProvider::OnePassword => Some("//./pipe/op-ssh-sign-pipe".to_string()),
             BridgeProvider::Pageant => None,
+            BridgeProvider::Custom { pipe_path } => {
+                if pipe_path.is_empty() {
+                    None
+                } else {
+                    Some(pipe_path.clone())
+                }
+            }
         }
     }
 
     /// Which relay binary this provider needs
     pub fn relay_binary(&self) -> RelayBinary {
         match self {
-            BridgeProvider::WindowsOpenSsh | BridgeProvider::OnePassword => RelayBinary::Npiperelay,
+            BridgeProvider::WindowsOpenSsh
+            | BridgeProvider::OnePassword
+            | BridgeProvider::Custom { .. } => RelayBinary::Npiperelay,
             BridgeProvider::Pageant => RelayBinary::WslSshPageant,
         }
     }
@@ -49,8 +64,10 @@ impl BridgeProvider {
     /// Whether this provider requires socat in WSL
     pub fn needs_socat(&self) -> bool {
         match self {
-            BridgeProvider::WindowsOpenSsh | BridgeProvider::OnePassword => true,
-            BridgeProvider::Pageant => false, // wsl-ssh-pageant creates the socket itself
+            BridgeProvider::WindowsOpenSsh
+            | BridgeProvider::OnePassword
+            | BridgeProvider::Custom { .. } => true,
+            BridgeProvider::Pageant => false,
         }
     }
 
@@ -58,12 +75,22 @@ impl BridgeProvider {
     pub fn service_description(&self) -> String {
         format!("Maze SSH Agent Relay ({} -> WSL)", self.display_name())
     }
+
+    /// Score for auto-recommendation (higher = better)
+    pub fn recommendation_score(&self) -> u8 {
+        match self {
+            BridgeProvider::OnePassword => 3,
+            BridgeProvider::WindowsOpenSsh => 2,
+            BridgeProvider::Pageant => 1,
+            BridgeProvider::Custom { .. } => 0,
+        }
+    }
 }
 
 /// Which external binary is used to relay the agent protocol into WSL
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RelayBinary {
-    /// npiperelay.exe — bridges Windows named pipes to stdio (for OpenSSH, 1Password)
+    /// npiperelay.exe — bridges Windows named pipes to stdio (for OpenSSH, 1Password, Custom)
     Npiperelay,
     /// wsl-ssh-pageant.exe — converts Pageant protocol to Unix socket
     WslSshPageant,
@@ -89,7 +116,6 @@ pub struct ProviderStatus {
     pub provider: BridgeProvider,
     pub display_name: String,
     pub available: bool,
-    /// Why unavailable, if applicable
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -121,10 +147,22 @@ mod tests {
     }
 
     #[test]
+    fn test_serde_custom_roundtrip() {
+        let provider = BridgeProvider::Custom {
+            pipe_path: "//./pipe/my-agent".to_string(),
+        };
+        let json = serde_json::to_string(&provider).unwrap();
+        assert!(json.contains("custom"));
+        assert!(json.contains("my-agent"));
+        let parsed: BridgeProvider = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, provider);
+    }
+
+    #[test]
     fn test_serde_default_deserialization() {
-        // Simulates an old config entry without provider field
         #[derive(Deserialize)]
         struct TestConfig {
+            #[allow(dead_code)]
             name: String,
             #[serde(default)]
             provider: BridgeProvider,
@@ -139,12 +177,30 @@ mod tests {
         assert!(BridgeProvider::WindowsOpenSsh.needs_socat());
         assert!(BridgeProvider::OnePassword.needs_socat());
         assert!(!BridgeProvider::Pageant.needs_socat());
+        assert!(BridgeProvider::Custom { pipe_path: "test".into() }.needs_socat());
     }
 
     #[test]
-    fn test_pageant_uses_wsl_ssh_pageant() {
+    fn test_relay_binaries() {
         assert_eq!(BridgeProvider::Pageant.relay_binary(), RelayBinary::WslSshPageant);
         assert_eq!(BridgeProvider::WindowsOpenSsh.relay_binary(), RelayBinary::Npiperelay);
         assert_eq!(BridgeProvider::OnePassword.relay_binary(), RelayBinary::Npiperelay);
+        assert_eq!(BridgeProvider::Custom { pipe_path: "x".into() }.relay_binary(), RelayBinary::Npiperelay);
+    }
+
+    #[test]
+    fn test_custom_named_pipe() {
+        let p = BridgeProvider::Custom { pipe_path: "//./pipe/test".to_string() };
+        assert_eq!(p.named_pipe(), Some("//./pipe/test".to_string()));
+
+        let empty = BridgeProvider::Custom { pipe_path: String::new() };
+        assert_eq!(empty.named_pipe(), None);
+    }
+
+    #[test]
+    fn test_recommendation_scores() {
+        assert!(BridgeProvider::OnePassword.recommendation_score() > BridgeProvider::WindowsOpenSsh.recommendation_score());
+        assert!(BridgeProvider::WindowsOpenSsh.recommendation_score() > BridgeProvider::Pageant.recommendation_score());
+        assert!(BridgeProvider::Pageant.recommendation_score() > BridgeProvider::Custom { pipe_path: "x".into() }.recommendation_score());
     }
 }
