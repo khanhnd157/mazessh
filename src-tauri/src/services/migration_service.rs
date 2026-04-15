@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::Path;
 
-use crate::error::MazeSshError;
 use crate::models::profile::SshProfile;
 use crate::models::vault::{MigrationEligible, MigrationFailed, MigrationPreview, MigrationReport, MigrationSkipped, MigrationSuccess};
 use crate::services::security as security_service;

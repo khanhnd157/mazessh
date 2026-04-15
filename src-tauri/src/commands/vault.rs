@@ -8,7 +8,7 @@ use crate::services::{audit_service, migration_service, policy_service, profile_
 use crate::state::AppState;
 
 use maze_vault::{
-    ExportPolicy, GenerateKeyInput, ImportKeyInput, SshKeyItem, SshKeyItemSummary, SshKeyVault,
+    ExportPolicy, GenerateKeyInput, SshKeyItem, SshKeyItemSummary, SshKeyVault,
     UpdateKeyInput,
 };
 
