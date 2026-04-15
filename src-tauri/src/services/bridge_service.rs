@@ -197,7 +197,7 @@ fn generate_bashrc_block(socket_path: &str, relay_mode: &RelayMode) -> String {
             r#"{begin}
 export MAZE_SSH_SOCKET="{socket_path}"
 if [ ! -S "$MAZE_SSH_SOCKET" ]; then
-    nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &
+    nohup "$HOME"/.local/bin/maze-ssh-relay.sh &>/dev/null &
     sleep 0.5
 fi
 export SSH_AUTH_SOCK="$MAZE_SSH_SOCKET"
@@ -316,7 +316,7 @@ pub fn bootstrap_distro(
             // 7. Launch relay immediately in background
             let _ = wsl_service::run_in_wsl(
                 distro,
-                &["bash", "-c", &format!("nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null & sleep 0.5")],
+                &["bash", "-c", r#"nohup "$HOME"/.local/bin/maze-ssh-relay.sh &>/dev/null & sleep 0.5"#],
             );
         }
     }
@@ -382,7 +382,7 @@ pub fn start_relay(distro: &str, relay_mode: &RelayMode) -> Result<(), MazeSshEr
             std::thread::sleep(std::time::Duration::from_millis(200));
             let result = wsl_service::run_in_wsl(
                 distro,
-                &["bash", "-c", "nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &"],
+                &["bash", "-c", r#"nohup "$HOME"/.local/bin/maze-ssh-relay.sh &>/dev/null &"#],
             )?;
             if !result.success {
                 return Err(MazeSshError::BridgeError(format!(
@@ -612,7 +612,7 @@ fn generate_fish_block(socket_path: &str, relay_mode: &RelayMode) -> String {
             r#"{begin}
 set -x MAZE_SSH_SOCKET "{socket_path}"
 if not test -S $MAZE_SSH_SOCKET
-    nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &
+    nohup "$HOME"/.local/bin/maze-ssh-relay.sh &>/dev/null &
     sleep 0.5
 end
 set -x SSH_AUTH_SOCK $MAZE_SSH_SOCKET
@@ -793,7 +793,7 @@ pub fn run_diagnostics(distro: &str, config: &BridgeConfig) -> DiagnosticsResult
     };
     let service_remediation = match relay_mode {
         RelayMode::Systemd => Some("systemctl --user start maze-ssh-relay.service".to_string()),
-        RelayMode::Daemon => Some("nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &".to_string()),
+        RelayMode::Daemon => Some(r#"nohup "$HOME"/.local/bin/maze-ssh-relay.sh &>/dev/null &"#.to_string()),
     };
     add_step(mode_label, service_active, None, service_remediation);
 
@@ -1018,24 +1018,29 @@ pub async fn poll_and_restart_relays(app: &tauri::AppHandle) {
     }
 }
 
-/// Generic marker-block removal helper
+/// Generic marker-block removal helper.
+///
+/// Scans forward from each begin marker to confirm a matching end marker exists
+/// before removing anything.  If no matching end is found the begin line is kept
+/// as-is so that stray or hand-edited markers never silently discard user content.
 fn remove_block_between(content: &str, begin: &str, end: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
     let mut result = String::new();
-    let mut inside_block = false;
+    let mut i = 0;
 
-    for line in content.lines() {
-        if line.trim() == begin {
-            inside_block = true;
-            continue;
+    while i < lines.len() {
+        if lines[i].trim() == begin {
+            // Only strip the block when we can confirm a matching end exists
+            if let Some(offset) = lines[i + 1..].iter().position(|l| l.trim() == end) {
+                // Skip begin line, inner content, and end line
+                i += offset + 2;
+                continue;
+            }
+            // No matching end — preserve the begin line unchanged
         }
-        if line.trim() == end {
-            inside_block = false;
-            continue;
-        }
-        if !inside_block {
-            result.push_str(line);
-            result.push('\n');
-        }
+        result.push_str(lines[i]);
+        result.push('\n');
+        i += 1;
     }
 
     result
@@ -1091,7 +1096,7 @@ pub fn refresh_relay_script(distro: &str, config: &BridgeConfig) -> Result<(), M
             let _ = wsl_service::run_in_wsl(distro, &["pkill", "-f", "maze-ssh-relay.sh"]);
             // Re-launch
             wsl_service::run_in_wsl(distro, &["bash", "-c",
-                &format!("nohup {} &>/dev/null &", script_path)])
+                r#"nohup "$HOME"/.local/bin/maze-ssh-relay.sh &>/dev/null &"#])
                 .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
         }
     }
@@ -1263,25 +1268,7 @@ pub fn test_ssh_via_bridge(
 }
 
 fn remove_marker_block(content: &str) -> String {
-    let mut result = String::new();
-    let mut inside_block = false;
-
-    for line in content.lines() {
-        if line.trim() == BRIDGE_MARKER_BEGIN {
-            inside_block = true;
-            continue;
-        }
-        if line.trim() == BRIDGE_MARKER_END {
-            inside_block = false;
-            continue;
-        }
-        if !inside_block {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-
-    result
+    remove_block_between(content, BRIDGE_MARKER_BEGIN, BRIDGE_MARKER_END)
 }
 
 #[cfg(test)]
@@ -1314,6 +1301,30 @@ mod tests {
         let content = "line1\nline2\n";
         let cleaned = remove_marker_block(content);
         assert_eq!(cleaned, content);
+    }
+
+    #[test]
+    fn test_remove_marker_block_orphaned_begin_preserved() {
+        // A stray begin marker with no matching end must NOT silently eat the rest of the file
+        let content = "line1\n# >>> maze-ssh-bridge >>>\nline2\nline3\n";
+        let cleaned = remove_marker_block(content);
+        // All content must be preserved — no data loss
+        assert!(cleaned.contains("line1"));
+        assert!(cleaned.contains("maze-ssh-bridge"));
+        assert!(cleaned.contains("line2"));
+        assert!(cleaned.contains("line3"));
+    }
+
+    #[test]
+    fn test_remove_block_between_multiple_blocks() {
+        // When two complete blocks exist, both should be removed
+        let content = "a\n# >>> maze-ssh-bridge >>>\nblock1\n# <<< maze-ssh-bridge <<<\nb\n# >>> maze-ssh-bridge >>>\nblock2\n# <<< maze-ssh-bridge <<<\nc\n";
+        let cleaned = remove_marker_block(content);
+        assert!(cleaned.contains('a'));
+        assert!(cleaned.contains('b'));
+        assert!(cleaned.contains('c'));
+        assert!(!cleaned.contains("block1"));
+        assert!(!cleaned.contains("block2"));
     }
 
     #[test]
