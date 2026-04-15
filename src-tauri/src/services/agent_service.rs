@@ -308,7 +308,8 @@ async fn handle_sign_request(
         );
     }
 
-    // Emit event to frontend so it can show the consent popup
+    // Open consent popup window and emit event
+    open_consent_window(app_handle);
     let _ = app_handle.emit(
         "consent-request",
         serde_json::json!({
@@ -410,6 +411,32 @@ fn perform_sign(app_state: &AppState, key_id: &str, data: &[u8]) -> AgentRespons
             AgentResponse::Failure
         }
     }
+}
+
+/// Open the consent popup as a Tauri window (or focus it if already open).
+fn open_consent_window(app_handle: &tauri::AppHandle) {
+    use tauri::WebviewWindowBuilder;
+
+    // If the consent window already exists, just focus it
+    if let Some(window) = app_handle.get_webview_window("consent") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    // Create new consent popup window
+    let _ = WebviewWindowBuilder::new(
+        app_handle,
+        "consent",
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("SSH Signing Consent")
+    .inner_size(420.0, 520.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .center()
+    .build();
 }
 
 fn cleanup_consent(app_state: &AppState, consent_id: &str) {

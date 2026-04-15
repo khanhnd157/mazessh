@@ -30,6 +30,25 @@ pub fn build_git_ssh_command(profile: &SshProfile) -> String {
     }
 }
 
+/// Build GIT_SSH_COMMAND that routes through MazeSSH Agent named pipe.
+/// Used when agent_mode = Vault.
+pub fn build_git_ssh_command_agent(profile: &SshProfile) -> String {
+    let pipe = crate::services::agent_service::PIPE_NAME;
+    let port = profile.port_or_default();
+
+    if port == 22 {
+        format!(
+            "ssh -o \"IdentityAgent={}\" -o StrictHostKeyChecking=accept-new",
+            pipe
+        )
+    } else {
+        format!(
+            "ssh -o \"IdentityAgent={}\" -p {} -o StrictHostKeyChecking=accept-new",
+            pipe, port
+        )
+    }
+}
+
 pub fn build_env_file_content(profile: &SshProfile) -> String {
     let ssh_command = build_git_ssh_command(profile);
     let mut content = String::new();
@@ -203,6 +222,12 @@ pub fn agent_list_keys() -> Result<String, String> {
 /// prevents command injection via crafted key paths.
 pub fn set_user_env_git_ssh_command(profile: &SshProfile) -> Result<(), String> {
     let ssh_command = build_git_ssh_command(profile);
+    set_user_env_git_ssh_command_value(&ssh_command)
+}
+
+/// Set GIT_SSH_COMMAND with an explicit command string value.
+pub fn set_user_env_git_ssh_command_value(ssh_command: &str) -> Result<(), String> {
+    let ssh_command = ssh_command.to_string();
 
     hidden_cmd("powershell")
         .args([

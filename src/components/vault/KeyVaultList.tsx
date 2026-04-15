@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Plus, KeyRound, Search } from "lucide-react";
+import { Plus, KeyRound, Search, Radio } from "lucide-react";
+import { commands } from "@/lib/tauri-commands";
 import { useVaultStore } from "@/stores/vaultStore";
 import { VaultSetupPrompt } from "./VaultSetupPrompt";
 import { VaultUnlockPrompt } from "./VaultUnlockPrompt";
@@ -17,10 +18,12 @@ export function KeyVaultList() {
   const [showGenerate, setShowGenerate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showMigration, setShowMigration] = useState(false);
+  const [agentPipe, setAgentPipe] = useState<string | null>(null);
 
   useEffect(() => {
     if (vaultState?.unlocked) {
       fetchKeys();
+      commands.getAgentPipePath().then(setAgentPipe).catch(() => {});
     }
   }, [vaultState?.unlocked, fetchKeys]);
 
@@ -101,6 +104,15 @@ export function KeyVaultList() {
           </button>
         </div>
       </div>
+
+      {/* Agent status */}
+      {agentPipe && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success/5 border border-success/15">
+          <Radio size={12} className="text-success animate-pulse" />
+          <span className="text-[11px] text-success font-medium">Agent running</span>
+          <span className="text-[10px] text-muted-foreground/50 font-mono">{agentPipe}</span>
+        </div>
+      )}
 
       {/* Key grid */}
       {keysLoading ? (
