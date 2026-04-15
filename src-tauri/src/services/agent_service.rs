@@ -350,11 +350,13 @@ async fn handle_sign_request(
         Ok(Ok(d)) => d,
         Ok(Err(_)) => {
             // Channel closed without response
+            audit_service::log_action("consent_dropped", Some(&key_item.name), "channel closed");
             cleanup_consent(app_state, &consent_id);
             return AgentResponse::Failure;
         }
         Err(_) => {
-            // Timeout
+            // Timeout — 60s elapsed without user response
+            audit_service::log_action("consent_timeout", Some(&key_item.name), "auto-denied after 60s");
             cleanup_consent(app_state, &consent_id);
             return AgentResponse::Failure;
         }
