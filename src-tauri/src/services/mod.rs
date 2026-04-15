@@ -18,3 +18,4 @@ pub mod settings_service;
 pub mod ssh_engine;
 pub mod validation;
 pub mod wsl_service;
+pub mod migration_service;

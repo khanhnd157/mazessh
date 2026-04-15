@@ -107,12 +107,85 @@ export interface GitIdentityInfo {
   scope: string;
 }
 
+// ── Vault Types ──
+
+export type KeyAlgorithm = "ed25519" | "rsa4096";
+export type KeyState = "active" | "archived";
+export type AgentMode = "file_system" | "vault";
+export type VaultUnlockMode = "same_as_pin" | "separate_passphrase";
+
+export interface VaultStateResponse {
+  initialized: boolean;
+  unlocked: boolean;
+  key_count: number;
+}
+
+export interface ExportPolicy {
+  allow_private_export: boolean;
+}
+
+export interface SshKeyItem {
+  id: string;
+  name: string;
+  algorithm: KeyAlgorithm;
+  public_key_openssh: string;
+  fingerprint: string;
+  state: KeyState;
+  export_policy: ExportPolicy;
+  comment: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SshKeyItemSummary {
+  id: string;
+  name: string;
+  algorithm: KeyAlgorithm;
+  fingerprint: string;
+  state: KeyState;
+  created_at: string;
+}
+
+export interface GenerateKeyRequest {
+  name: string;
+  algorithm: KeyAlgorithm;
+  comment?: string | null;
+  allow_private_export?: boolean | null;
+}
+
+export interface ImportKeyRequest {
+  name: string;
+  private_key_pem: string;
+  comment?: string | null;
+  source_passphrase?: string | null;
+  allow_private_export?: boolean | null;
+}
+
+export interface UpdateKeyRequest {
+  name?: string | null;
+  comment?: string | null;
+  allow_private_export?: boolean | null;
+}
+
+export interface MigrationPreview {
+  eligible: { profile_id: string; profile_name: string; key_path: string; algorithm: string }[];
+  skipped: { profile_id: string; profile_name: string; reason: string }[];
+}
+
+export interface MigrationReport {
+  succeeded: { profile_id: string; profile_name: string; vault_key_id: string }[];
+  skipped: { profile_id: string; profile_name: string; reason: string }[];
+  failed: { profile_id: string; profile_name: string; error: string }[];
+}
+
 // ── M3: Security Types ──
 
 export interface SecuritySettings {
   auto_lock_timeout_minutes: number | null;
   agent_key_timeout_minutes: number | null;
   lock_on_minimize: boolean;
+  vault_unlock_mode: VaultUnlockMode;
+  agent_mode: AgentMode;
 }
 
 export interface LockStateResponse {

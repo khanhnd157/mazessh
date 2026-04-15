@@ -4,7 +4,7 @@ use zeroize::Zeroize;
 use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::vault::*;
-use crate::services::audit_service;
+use crate::services::{audit_service, migration_service, profile_service};
 use crate::state::AppState;
 
 use maze_vault::{
@@ -267,4 +267,92 @@ pub fn vault_export_private_key(
     let pem = SshKeyVault::export_private_key(session, &id, &state.vault_dir)?;
     audit_service::log_action("vault_export_private_key", Some(&id), "success");
     Ok(pem)
+}
+
+// ── Migration ────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_migration_preview(state: State<'_, AppState>) -> Result<MigrationPreview, MazeSshError> {
+    ensure_unlocked(&state)?;
+    let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
+    Ok(migration_service::build_preview(&inner.profiles))
+}
+
+#[tauri::command]
+pub fn migrate_profiles_to_vault(
+    profile_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<MigrationReport, MazeSshError> {
+    ensure_unlocked(&state)?;
+    let guard = state
+        .vault_session
+        .lock()
+        .map_err(|_| MazeSshError::StateLockError)?;
+    let session = guard.as_ref().ok_or(MazeSshError::VaultLocked)?;
+
+    let profiles = {
+        let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
+        inner.profiles.clone()
+    };
+
+    let report = migration_service::migrate_profiles(&session, &profiles, &profile_ids, &state.vault_dir);
+
+    // Update profiles with vault_key_id for successful migrations
+    if !report.succeeded.is_empty() {
+        let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
+        for success in &report.succeeded {
+            if let Some(profile) = inner.profiles.iter_mut().find(|p| p.id == success.profile_id) {
+                profile.vault_key_id = Some(success.vault_key_id.clone());
+            }
+        }
+        let _ = profile_service::save_profiles(&inner.profiles);
+    }
+
+    let migrated_count = report.succeeded.len();
+    audit_service::log_action(
+        "migrate_profiles",
+        None,
+        &format!("{} migrated, {} skipped, {} failed", migrated_count, report.skipped.len(), report.failed.len()),
+    );
+
+    Ok(report)
+}
+
+#[tauri::command]
+pub fn delete_original_key_file(
+    key_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+
+    let path = std::path::Path::new(&key_path);
+
+    // Safety: only delete files under ~/.ssh/
+    let ssh_dir = dirs::home_dir()
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?
+        .join(".ssh");
+
+    let canonical_path = dunce::canonicalize(path)
+        .map_err(|e| MazeSshError::ConfigError(format!("Cannot resolve path: {e}")))?;
+    let canonical_ssh = dunce::canonicalize(&ssh_dir)
+        .unwrap_or_else(|_| ssh_dir.clone());
+
+    if !canonical_path.starts_with(&canonical_ssh) {
+        return Err(MazeSshError::ValidationError(
+            "Can only delete key files under ~/.ssh/".to_string(),
+        ));
+    }
+
+    if canonical_path.exists() {
+        std::fs::remove_file(&canonical_path)?;
+    }
+
+    // Also delete .pub file if it exists
+    let pub_path = canonical_path.with_extension("pub");
+    if pub_path.exists() {
+        let _ = std::fs::remove_file(&pub_path);
+    }
+
+    audit_service::log_action("delete_original_key", Some(&key_path), "success");
+    Ok(())
 }
