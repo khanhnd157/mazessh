@@ -10,6 +10,7 @@ use crate::models::bridge::BridgeConfig;
 use crate::models::profile::SshProfile;
 use crate::models::repo_mapping::RepoMapping;
 use crate::models::security::SecuritySettings;
+use crate::services::policy_service::SessionRules;
 
 /// A pending consent request waiting for user approval.
 pub struct PendingConsent {
@@ -53,6 +54,8 @@ pub struct AppState {
     /// Pending consent popups for SSH agent sign requests.
     /// Key = consent request UUID.
     pub pending_consents: Mutex<HashMap<String, PendingConsent>>,
+    /// Session-level policy rules (cleared on lock/restart).
+    pub session_rules: SessionRules,
 }
 
 pub struct AppStateInner {
@@ -102,6 +105,7 @@ impl AppState {
             vault_session: Mutex::new(None),
             vault_dir,
             pending_consents: Mutex::new(HashMap::new()),
+            session_rules: SessionRules::new(),
         }
     }
 
@@ -139,6 +143,7 @@ impl AppState {
             vault_session: Mutex::new(None),
             vault_dir,
             pending_consents: Mutex::new(HashMap::new()),
+            session_rules: SessionRules::new(),
         }
     }
 }

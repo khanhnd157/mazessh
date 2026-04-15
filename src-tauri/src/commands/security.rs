@@ -17,11 +17,12 @@ pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
     security.is_locked = true;
     drop(security);
 
-    // Lock vault session (zeroize VEK)
+    // Lock vault session (zeroize VEK) and clear session rules
     {
         let mut vault_guard = state.vault_session.lock().map_err(|_| MazeSshError::StateLockError)?;
         *vault_guard = None; // Drop triggers ZeroizeOnDrop
     }
+    state.session_rules.clear();
 
     // Emit IMMEDIATELY so UI locks instantly
     let _ = app.emit("lock-state-changed", serde_json::json!({ "is_locked": true }));

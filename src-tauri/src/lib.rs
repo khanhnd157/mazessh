@@ -280,6 +280,9 @@ pub fn run() {
             commands::vault::delete_original_key_file,
             commands::vault::respond_to_consent,
             commands::vault::get_pending_consent,
+            commands::vault::list_policy_rules,
+            commands::vault::delete_policy_rule,
+            commands::vault::clear_all_policy_rules,
             // Tray
             update_tray_tooltip,
         ])
