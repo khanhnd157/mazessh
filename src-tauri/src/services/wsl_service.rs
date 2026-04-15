@@ -51,15 +51,40 @@ pub struct CmdOutput {
     pub success: bool,
 }
 
-/// Check if WSL is installed and functional
+/// Timeout for WSL discovery commands (is_wsl_available, list_distros).
+/// Shorter than WSL_CMD_TIMEOUT_SECS because these are host-level checks
+/// that should complete instantly when WSL is healthy.
+const WSL_DISCOVERY_TIMEOUT_SECS: u64 = 10;
+
+/// Check if WSL is installed and functional.
+/// Uses a polling loop with a hard timeout so a hung wsl.exe cannot
+/// block the Tauri command thread indefinitely.
 pub fn is_wsl_available() -> bool {
-    hidden_cmd("wsl")
+    let mut child = match hidden_cmd("wsl")
         .args(["--status"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(WSL_DISCOVERY_TIMEOUT_SECS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(_) => return false,
+        }
+    }
 }
 
 /// List all WSL distributions by parsing `wsl -l -v`.
@@ -71,16 +96,48 @@ pub fn is_wsl_available() -> bool {
 ///   Debian    Stopped  2
 /// ```
 pub fn list_distros() -> Result<Vec<WslDistro>, MazeSshError> {
-    let output = hidden_cmd("wsl")
+    let mut child = hidden_cmd("wsl")
         .args(["-l", "-v"])
-        .output()
-        .map_err(|e| MazeSshError::WslNotAvailable(format!("Failed to run wsl: {}", e)))?;
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| MazeSshError::WslNotAvailable(format!("Failed to spawn wsl: {}", e)))?;
 
-    if !output.status.success() {
-        return Err(MazeSshError::WslNotAvailable(
-            "wsl -l -v returned non-zero exit code".to_string(),
-        ));
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(WSL_DISCOVERY_TIMEOUT_SECS);
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return Err(MazeSshError::WslNotAvailable(
+                        "wsl -l -v returned non-zero exit code".to_string(),
+                    ));
+                }
+                break;
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(MazeSshError::WslNotAvailable(
+                        "wsl -l -v timed out".to_string(),
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => {
+                return Err(MazeSshError::WslNotAvailable(format!(
+                    "Failed to poll wsl: {}",
+                    e
+                )))
+            }
+        }
     }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| MazeSshError::WslNotAvailable(format!("Failed to collect output: {}", e)))?;
 
     let text = decode_wsl_output(&output.stdout);
     parse_distro_list(&text)
