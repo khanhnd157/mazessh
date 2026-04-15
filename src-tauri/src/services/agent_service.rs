@@ -95,6 +95,8 @@ async fn handle_connection(
     // Identify the connecting process
     let client_info = get_pipe_client_info(&pipe);
 
+    const MAX_PENDING: usize = 1_048_576; // 1MB max pending buffer
+
     let mut buf = vec![0u8; 65536];
     let mut pending = Vec::new();
 
@@ -105,6 +107,12 @@ async fn handle_connection(
         }
 
         pending.extend_from_slice(&buf[..n]);
+
+        // Reject clients that accumulate too much unprocessed data (DoS protection)
+        if pending.len() > MAX_PENDING {
+            eprintln!("[maze-agent] pending buffer overflow ({} bytes), disconnecting client", pending.len());
+            break;
+        }
 
         // Process all complete frames in the buffer
         while let Some((frame, consumed)) = try_read_frame(&pending) {
