@@ -116,21 +116,43 @@ pub fn list_backups() -> Result<Vec<ConfigBackup>, MazeSshError> {
     Ok(backups)
 }
 
-/// Restore SSH config from a backup file
+/// Restore SSH config from a backup file.
+/// `backup_path` must be a canonicalized path already validated by the caller
+/// to reside inside `~/.ssh/` and match the `config.backup.*` naming pattern.
 pub fn rollback_config(backup_path: &str) -> Result<(), MazeSshError> {
     let backup = std::path::Path::new(backup_path);
-    if !backup.exists() {
-        return Err(MazeSshError::ConfigError(format!(
-            "Backup not found: {}",
-            backup_path
-        )));
+
+    let ssh_dir = dirs::home_dir()
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?
+        .join(".ssh");
+    let canonical_ssh = ssh_dir
+        .canonicalize()
+        .unwrap_or(ssh_dir);
+    let canonical_backup = backup.canonicalize().map_err(|_| {
+        MazeSshError::ConfigError(format!("Backup path does not exist: {}", backup_path))
+    })?;
+
+    if !canonical_backup.starts_with(&canonical_ssh) {
+        return Err(MazeSshError::ConfigError(
+            "Backup path must be inside ~/.ssh/".to_string(),
+        ));
     }
+
+    let filename = canonical_backup
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if !filename.starts_with("config.backup.") {
+        return Err(MazeSshError::ConfigError(
+            "Invalid backup filename — expected config.backup.<timestamp>".to_string(),
+        ));
+    }
+
     let config_path = ssh_config_path()?;
-    // Backup current before rollback
     if config_path.exists() {
         let _ = backup_config();
     }
-    fs::copy(backup, &config_path)?;
+    fs::copy(&canonical_backup, &config_path)?;
     Ok(())
 }
 

@@ -215,9 +215,9 @@ fn check_custom_pipe(pipe_path: &str) -> ProviderStatus {
         };
     }
 
-    // Convert //./pipe/xxx to \\.\pipe\xxx for PowerShell Test-Path
     let ps_path = pipe_path.replace("//./pipe/", r"\\.\pipe\");
-    let cmd_str = format!("Test-Path '{}'", ps_path);
+    let ps_path_escaped = ps_path.replace('\'', "''");
+    let cmd_str = format!("Test-Path -LiteralPath '{}'", ps_path_escaped);
 
     let available = hidden_cmd("powershell")
         .args(["-NoProfile", "-Command", &cmd_str])
