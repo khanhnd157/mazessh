@@ -136,8 +136,13 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
 
   updateKey: async (id, input) => {
     await commands.vaultUpdateKey(id, input);
-    // Refresh full list and selected key since name/comment may have changed
-    await get().fetchKeys();
+    // Optimistic: patch name in summary list without a full re-fetch
+    if (input.name != null) {
+      set((s) => ({
+        keys: s.keys.map((k) => (k.id === id ? { ...k, name: input.name! } : k)),
+      }));
+    }
+    // Always refresh the full detail view so comment/export policy stay in sync
     if (get().selectedKeyId === id) {
       await get().selectKey(id);
     }

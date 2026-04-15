@@ -142,8 +142,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     } finally {
       setDeleting(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile.id, profile.name, confirm]);
+  }, [profile.id, profile.name, confirm, deleteProfile, addLog]);
 
   const copyKeyPath = () => {
     navigator.clipboard.writeText(String(profile.private_key_path));

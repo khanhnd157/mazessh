@@ -13,6 +13,8 @@ import { VaultPassphraseChange } from "./VaultPassphraseChange";
 import { KeyCard } from "./KeyCard";
 import type { KeyState } from "@/types";
 
+const KEY_FILTER_TABS = ["all", "active", "archived"] as const;
+
 export function KeyVaultList() {
   const vaultState = useVaultStore((s) => s.vaultState);
   const keys = useVaultStore((s) => s.keys);
@@ -86,7 +88,7 @@ export function KeyVaultList() {
             )}
           </div>
           <div className="flex rounded-lg border border-border overflow-hidden">
-            {(["all", "active", "archived"] as const).map((s) => (
+            {KEY_FILTER_TABS.map((s) => (
               <button
                 key={s}
                 type="button"

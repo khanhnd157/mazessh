@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { memo, useEffect, useRef, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "sonner";
 import { KeyRound, FileCode2, FolderGit2, Monitor, Settings, Shield } from "lucide-react";
@@ -9,6 +9,7 @@ import { useThemeStore } from "@/stores/themeStore";
 import { useSecurityStore } from "@/stores/securityStore";
 import { useVaultStore } from "@/stores/vaultStore";
 import { useUiStore } from "@/stores/uiStore";
+import type { Tab } from "@/stores/uiStore";
 import { useInactivityTracker } from "@/hooks/useInactivityTracker";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { TitleBar } from "@/components/layout/TitleBar";
@@ -28,8 +29,6 @@ function App() {
   const theme = useThemeStore((s) => s.theme);
   const isLocked = useSecurityStore((s) => s.isLocked);
   const initialized = useSecurityStore((s) => s.initialized);
-  const activeTab = useUiStore((s) => s.activeTab);
-  const setActiveTab = useUiStore((s) => s.setActiveTab);
   const didInit = useRef(false);
 
   useInactivityTracker();
@@ -57,6 +56,7 @@ function App() {
 
   // Event listeners — stable, no store deps
   useEffect(() => {
+    let cancelled = false;
     const unlisteners: (() => void)[] = [];
 
     Promise.all([
@@ -97,9 +97,17 @@ function App() {
           description: `${event.payload.process_name} wants to use "${event.payload.key_name}"`,
         });
       }),
-    ]).then((fns) => unlisteners.push(...fns));
+    ]).then((fns) => {
+      // If the component unmounted before promises resolved, clean up immediately
+      if (cancelled) {
+        for (const fn of fns) fn();
+      } else {
+        unlisteners.push(...fns);
+      }
+    });
 
     return () => {
+      cancelled = true;
       for (const fn of unlisteners) fn();
     };
   }, []);
@@ -121,67 +129,31 @@ function App() {
         <Sidebar />
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className="flex border-b bg-card/30 h-10 shrink-0" role="tablist" aria-label="Main navigation">
-            <TabButton
-              id="tab-profiles"
-              icon={<KeyRound size={14} />}
-              label="Profiles"
-              active={activeTab === "profiles"}
-              onClick={() => setActiveTab("profiles")}
-            />
-            <TabButton
-              id="tab-vault"
-              icon={<Shield size={14} />}
-              label="Key Vault"
-              active={activeTab === "vault"}
-              onClick={() => setActiveTab("vault")}
-            />
-            <TabButton
-              id="tab-repos"
-              icon={<FolderGit2 size={14} />}
-              label="Repo Mappings"
-              active={activeTab === "repos"}
-              onClick={() => setActiveTab("repos")}
-            />
-            <TabButton
-              id="tab-config"
-              icon={<FileCode2 size={14} />}
-              label="SSH Config"
-              active={activeTab === "config"}
-              onClick={() => setActiveTab("config")}
-            />
-            <TabButton
-              id="tab-bridge"
-              icon={<Monitor size={14} />}
-              label="WSL Bridge"
-              active={activeTab === "bridge"}
-              onClick={() => setActiveTab("bridge")}
-            />
-            <TabButton
-              id="tab-settings"
-              icon={<Settings size={14} />}
-              label="Settings"
-              active={activeTab === "settings"}
-              onClick={() => setActiveTab("settings")}
-            />
+            <TabButton id="tab-profiles" icon={<KeyRound size={14} />} label="Profiles" tabId="profiles" />
+            <TabButton id="tab-vault" icon={<Shield size={14} />} label="Key Vault" tabId="vault" />
+            <TabButton id="tab-repos" icon={<FolderGit2 size={14} />} label="Repo Mappings" tabId="repos" />
+            <TabButton id="tab-config" icon={<FileCode2 size={14} />} label="SSH Config" tabId="config" />
+            <TabButton id="tab-bridge" icon={<Monitor size={14} />} label="WSL Bridge" tabId="bridge" />
+            <TabButton id="tab-settings" icon={<Settings size={14} />} label="Settings" tabId="settings" />
           </div>
           {/* All panels stay mounted; active panel fades in, others hidden */}
           <div className="flex-1 min-h-0 overflow-hidden relative">
-            <TabPanel id="panel-profiles" labelledBy="tab-profiles" active={activeTab === "profiles"}>
+            <TabPanel id="panel-profiles" labelledBy="tab-profiles" tabId="profiles">
               <MainPanel />
             </TabPanel>
-            <TabPanel id="panel-vault" labelledBy="tab-vault" active={activeTab === "vault"} scrollable>
+            <TabPanel id="panel-vault" labelledBy="tab-vault" tabId="vault" scrollable>
               <KeyVaultList />
             </TabPanel>
-            <TabPanel id="panel-repos" labelledBy="tab-repos" active={activeTab === "repos"} scrollable>
+            <TabPanel id="panel-repos" labelledBy="tab-repos" tabId="repos" scrollable>
               <RepoMappingList />
             </TabPanel>
-            <TabPanel id="panel-config" labelledBy="tab-config" active={activeTab === "config"} scrollable>
+            <TabPanel id="panel-config" labelledBy="tab-config" tabId="config" scrollable>
               <ConfigPreview />
             </TabPanel>
-            <TabPanel id="panel-bridge" labelledBy="tab-bridge" active={activeTab === "bridge"} scrollable>
+            <TabPanel id="panel-bridge" labelledBy="tab-bridge" tabId="bridge" scrollable>
               <WslBridgePanel />
             </TabPanel>
-            <TabPanel id="panel-settings" labelledBy="tab-settings" active={activeTab === "settings"} scrollable>
+            <TabPanel id="panel-settings" labelledBy="tab-settings" tabId="settings" scrollable>
               <SecuritySettingsPanel />
             </TabPanel>
           </div>
@@ -193,19 +165,20 @@ function App() {
   );
 }
 
-function TabButton({
+// Each TabButton subscribes only to its own active state — only the 2 changing
+// buttons re-render per tab switch instead of all 6.
+const TabButton = memo(function TabButton({
   id,
   icon,
   label,
-  active,
-  onClick,
+  tabId,
 }: {
   id: string;
   icon: React.ReactNode;
   label: string;
-  active: boolean;
-  onClick: () => void;
+  tabId: Tab;
 }) {
+  const active = useUiStore((s) => s.activeTab === tabId);
   return (
     <button
       id={id}
@@ -213,8 +186,8 @@ function TabButton({
       role="tab"
       aria-selected={active}
       aria-controls={id.replace("tab-", "panel-")}
-      onClick={onClick}
-      className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all duration-150 ${
+      onClick={() => useUiStore.getState().setActiveTab(tabId)}
+      className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors duration-150 ${
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       }`}
     >
@@ -223,27 +196,28 @@ function TabButton({
       {/* Animated underline indicator */}
       <span
         aria-hidden="true"
-        className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary transition-all duration-200 ease-out ${
+        className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary transition-[opacity,transform] duration-200 ease-out ${
           active ? "opacity-100 scale-x-100" : "opacity-0 scale-x-0"
         }`}
       />
     </button>
   );
-}
+});
 
 function TabPanel({
   id,
   labelledBy,
-  active,
+  tabId,
   scrollable,
   children,
 }: {
   id: string;
   labelledBy: string;
-  active: boolean;
+  tabId: Tab;
   scrollable?: boolean;
   children: ReactNode;
 }) {
+  const active = useUiStore((s) => s.activeTab === tabId);
   // Mount on first visit, stay mounted afterward (preserves state, avoids re-fetching)
   const hasMounted = useRef(false);
   if (active) hasMounted.current = true;
