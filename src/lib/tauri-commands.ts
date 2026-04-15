@@ -255,4 +255,12 @@ export const commands = {
     invoke<void>("respond_to_consent", { consentId, approved, selectedKeyId, allowMode }),
   getPendingConsent: () =>
     invoke<{ consent_id: string; key_id: string; key_name: string; process_name: string; host: string } | null>("get_pending_consent"),
+
+  // ── Policy Rules ──
+  listPolicyRules: () =>
+    invoke<{ key_id: string; key_name: string; rule_type: string; created_at: string }[]>("list_policy_rules"),
+  deletePolicyRule: (keyId: string) =>
+    invoke<void>("delete_policy_rule", { keyId }),
+  clearAllPolicyRules: () =>
+    invoke<void>("clear_all_policy_rules"),
 };

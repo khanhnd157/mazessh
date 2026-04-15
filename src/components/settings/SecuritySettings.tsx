@@ -7,6 +7,7 @@ import { useProfileStore } from "@/stores/profileStore";
 import type { SecuritySettings as SecuritySettingsType, KeyHealthReport } from "@/types";
 import { AuditLogViewer } from "./AuditLogViewer";
 import { AgentModeSettings } from "./AgentModeSettings";
+import { PolicyRulesPanel } from "./PolicyRulesPanel";
 
 const TIMEOUT_OPTIONS = [
   { value: null, label: "Disabled" },
@@ -306,6 +307,9 @@ export function SecuritySettingsPanel() {
           }} />
         </div>
       )}
+
+      {/* Section: Policy Rules */}
+      <PolicyRulesPanel />
 
       {/* Section 4: Export / Import */}
       <div className="rounded-xl border bg-card p-4 space-y-3">

@@ -4,7 +4,7 @@ use zeroize::Zeroize;
 use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::vault::*;
-use crate::services::{audit_service, migration_service, profile_service};
+use crate::services::{audit_service, migration_service, policy_service, profile_service};
 use crate::state::AppState;
 
 use maze_vault::{
@@ -417,4 +417,50 @@ pub fn get_pending_consent(
     } else {
         Ok(None)
     }
+}
+
+// ── Policy rules ─────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn list_policy_rules(
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, MazeSshError> {
+    ensure_unlocked(&state)?;
+    let rules = policy_service::load_rules(&state.vault_dir);
+    let json_rules: Vec<serde_json::Value> = rules
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "key_id": r.key_id,
+                "key_name": r.key_name,
+                "rule_type": "always",
+                "created_at": r.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
+    Ok(json_rules)
+}
+
+#[tauri::command]
+pub fn delete_policy_rule(
+    key_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+    policy_service::remove_rule(&state.vault_dir, &key_id)
+        .map_err(|e| MazeSshError::VaultError(e.to_string()))?;
+    audit_service::log_action("delete_policy_rule", Some(&key_id), "success");
+    Ok(())
+}
+
+#[tauri::command]
+pub fn clear_all_policy_rules(
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+    policy_service::clear_all_rules(&state.vault_dir)
+        .map_err(|e| MazeSshError::VaultError(e.to_string()))?;
+    state.session_rules.clear();
+    audit_service::log_action("clear_policy_rules", None, "success");
+    Ok(())
 }

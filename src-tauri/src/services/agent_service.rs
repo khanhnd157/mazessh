@@ -9,6 +9,7 @@ use tauri::{Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Notify;
 
+use crate::services::policy_service;
 use crate::state::{AppState, ConsentDecision, PendingConsent};
 
 /// The named pipe path for the MazeSSH agent on Windows.
@@ -185,7 +186,7 @@ fn handle_request_identities(app_state: &AppState) -> AgentResponse {
 }
 
 /// Sign data with the key matching the given key_blob.
-/// Opens a consent popup and waits for user approval (60s timeout).
+/// Checks policy rules first; if no rule matches, opens consent popup (60s timeout).
 async fn handle_sign_request(
     app_state: &AppState,
     app_handle: &tauri::AppHandle,
@@ -203,7 +204,17 @@ async fn handle_sign_request(
         Err(_) => return AgentResponse::Failure,
     };
 
-    // Create consent request with oneshot channel
+    // ── Policy check: skip consent if rule matches ──
+    // Check "always" persistent rule
+    if policy_service::has_always_rule(&app_state.vault_dir, &key_id) {
+        return perform_sign(app_state, &key_id, data);
+    }
+    // Check "session" rule
+    if app_state.session_rules.is_allowed(&key_id) {
+        return perform_sign(app_state, &key_id, data);
+    }
+
+    // ── No rule — show consent popup ──
     let consent_id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = tokio::sync::oneshot::channel::<ConsentDecision>();
 
@@ -267,7 +278,25 @@ async fn handle_sign_request(
         decision.selected_key_id
     };
 
-    // Perform the actual signing
+    // Save policy rule based on user's choice
+    match decision.allow_mode.as_str() {
+        "session" => {
+            app_state.session_rules.allow(&sign_key_id);
+        }
+        "always" => {
+            let key_name = SshKeyVault::get_key(&sign_key_id, &app_state.vault_dir)
+                .map(|k| k.name)
+                .unwrap_or_default();
+            let _ = policy_service::add_always_rule(&app_state.vault_dir, &sign_key_id, &key_name);
+        }
+        _ => {} // "once" — no caching
+    }
+
+    perform_sign(app_state, &sign_key_id, data)
+}
+
+/// Perform the actual signing operation (shared between policy-cached and consent flows).
+fn perform_sign(app_state: &AppState, key_id: &str, data: &[u8]) -> AgentResponse {
     let guard = match app_state.vault_session.lock() {
         Ok(g) => g,
         Err(_) => return AgentResponse::Failure,
@@ -277,9 +306,9 @@ async fn handle_sign_request(
         None => return AgentResponse::Failure,
     };
 
-    match SshKeyVault::sign(session, &sign_key_id, data, &app_state.vault_dir) {
+    match SshKeyVault::sign(session, key_id, data, &app_state.vault_dir) {
         Ok(signature_bytes) => {
-            let signed_key = match SshKeyVault::get_key(&sign_key_id, &app_state.vault_dir) {
+            let signed_key = match SshKeyVault::get_key(key_id, &app_state.vault_dir) {
                 Ok(k) => k,
                 Err(_) => return AgentResponse::Failure,
             };
