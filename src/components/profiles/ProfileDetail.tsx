@@ -40,11 +40,14 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
   const { addLog } = useLogStore();
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [testing, setTesting] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [profileMappings, setProfileMappings] = useState<RepoMappingSummary[]>([]);
+  const [mappingsLoading, setMappingsLoading] = useState(false);
   const [fingerprint, setFingerprint] = useState<KeyFingerprint | null>(null);
+  const [fingerprintLoading, setFingerprintLoading] = useState(false);
 
   // Reset state when switching profiles
   useEffect(() => {
@@ -53,16 +56,23 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     setShowAddRepo(false);
     setFingerprint(null);
     setProfileMappings([]);
+    setMappingsLoading(true);
+    setFingerprintLoading(true);
     commands.getRepoMappingsForProfile(profile.id)
       .then(setProfileMappings)
-      .catch(() => {});
-    commands.getKeyFingerprint(profile.id).then(setFingerprint).catch(() => {});
+      .catch(() => {})
+      .finally(() => setMappingsLoading(false));
+    commands.getKeyFingerprint(profile.id)
+      .then(setFingerprint)
+      .catch(() => {})
+      .finally(() => setFingerprintLoading(false));
   }, [profile.id]);
 
   const { confirmProps, confirm } = useConfirm();
   const isActive = activeProfile?.id === profile.id;
 
   const handleActivate = useCallback(async () => {
+    setActivating(true);
     try {
       const result = await activateProfile(profile.id);
       await fetchProfiles();
@@ -75,6 +85,8 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     } catch (err) {
       addLog({ action: "activate", detail: `Failed: ${err}`, level: "error" });
       toast.error("Activation failed", { description: String(err) });
+    } finally {
+      setActivating(false);
     }
   }, [profile.id, activateProfile, fetchProfiles, addLog]);
 
@@ -163,10 +175,11 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
           <button
             type="button"
             onClick={handleActivate}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            disabled={activating}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Zap size={13} />
-            Activate
+            {activating ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+            {activating ? "Activating..." : "Activate"}
           </button>
         )}
       </div>
@@ -211,7 +224,9 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
       </div>
 
       {/* Key Fingerprint + Copy Public Key */}
-      {fingerprint && (
+      {fingerprintLoading ? (
+        <div className="h-8 rounded-lg bg-secondary/30 animate-pulse" aria-hidden="true" />
+      ) : fingerprint ? (
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary/30 text-xs font-mono text-muted-foreground">
           <span className="text-primary/70">{fingerprint.key_type}</span>
           <span>{fingerprint.hash}</span>
@@ -221,12 +236,13 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
             type="button"
             onClick={copyPublicKey}
             title="Copy public key to clipboard"
+            aria-label="Copy public key to clipboard"
             className="text-[10px] font-sans font-medium px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           >
             Copy Public Key
           </button>
         </div>
-      )}
+      ) : null}
 
       {/* Actions */}
       <div className="flex items-center gap-2">
@@ -311,7 +327,12 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
             Map Repo
           </button>
         </div>
-        {profileMappings.length === 0 ? (
+        {mappingsLoading ? (
+          <div className="space-y-1" aria-hidden="true">
+            <div className="h-8 rounded-lg bg-secondary/30 animate-pulse" />
+            <div className="h-8 rounded-lg bg-secondary/30 animate-pulse opacity-50" />
+          </div>
+        ) : profileMappings.length === 0 ? (
           <p className="text-xs text-muted-foreground/50 py-2">
             No repositories mapped to this profile
           </p>

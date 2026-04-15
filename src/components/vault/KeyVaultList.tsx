@@ -65,6 +65,7 @@ export function KeyVaultList() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search..."
+              aria-label="Search keys"
               className="pl-7 pr-7 py-1.5 text-xs rounded-lg bg-secondary border border-border w-48 focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {search && (
