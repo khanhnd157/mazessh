@@ -18,3 +18,7 @@ pub mod settings_service;
 pub mod ssh_engine;
 pub mod validation;
 pub mod wsl_service;
+pub mod migration_service;
+pub mod policy_service;
+#[cfg(feature = "desktop")]
+pub mod agent_service;

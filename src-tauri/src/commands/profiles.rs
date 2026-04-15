@@ -64,6 +64,7 @@ pub fn create_profile(
         has_passphrase: input.has_passphrase,
         created_at: now.clone(),
         updated_at: now,
+        vault_key_id: None,
     };
 
     let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;

@@ -41,6 +41,9 @@ pub struct SshProfile {
     pub has_passphrase: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// If this profile's key is managed by the vault, holds the vault key ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_key_id: Option<String>,
 }
 
 impl SshProfile {
