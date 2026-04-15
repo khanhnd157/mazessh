@@ -30,10 +30,14 @@ pub fn build_git_ssh_command(profile: &SshProfile) -> String {
     }
 }
 
+/// The named pipe path used by the MazeSSH Agent.
+/// Duplicated here so this module compiles without the `desktop` feature.
+const MAZE_AGENT_PIPE: &str = r"\\.\pipe\maze-ssh-agent";
+
 /// Build GIT_SSH_COMMAND that routes through MazeSSH Agent named pipe.
 /// Used when agent_mode = Vault.
 pub fn build_git_ssh_command_agent(profile: &SshProfile) -> String {
-    let pipe = crate::services::agent_service::PIPE_NAME;
+    let pipe = MAZE_AGENT_PIPE;
     let port = profile.port_or_default();
 
     if port == 22 {
@@ -63,7 +67,7 @@ pub fn build_env_file_content(profile: &SshProfile) -> String {
 /// Build env file content that routes through MazeSSH Agent.
 pub fn build_env_file_content_agent(profile: &SshProfile) -> String {
     let ssh_command = build_git_ssh_command_agent(profile);
-    let pipe = crate::services::agent_service::PIPE_NAME;
+    let pipe = MAZE_AGENT_PIPE;
     let mut content = String::new();
     content.push_str(&format!("export GIT_SSH_COMMAND='{}'\n", ssh_command));
     content.push_str(&format!("export SSH_AUTH_SOCK='{}'\n", pipe));
