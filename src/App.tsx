@@ -86,10 +86,25 @@ function App() {
       useAppStore.getState().fetchActiveProfile();
     });
 
+    const unlistenVaultState = listen<{ initialized: boolean; unlocked: boolean; key_count: number }>("vault-state-changed", (event) => {
+      useVaultStore.getState().setVaultState(event.payload);
+      if (event.payload.unlocked) {
+        useVaultStore.getState().fetchKeys();
+      }
+    });
+
+    const unlistenConsent = listen<{ consent_id: string; key_name: string; process_name: string }>("consent-request", (event) => {
+      toast.info("SSH signing request", {
+        description: `${event.payload.process_name} wants to use "${event.payload.key_name}"`,
+      });
+    });
+
     return () => {
       unlistenAgent.then((fn) => fn());
       unlistenLock.then((fn) => fn());
       unlistenExpiry.then((fn) => fn());
+      unlistenVaultState.then((fn) => fn());
+      unlistenConsent.then((fn) => fn());
     };
   }, []);
 
