@@ -444,12 +444,13 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
 
     let enabled = config.distros.iter().any(|d| d.distro_name == distro && d.enabled);
 
-    let allow_agent_forwarding = config
-        .distros
-        .iter()
-        .find(|d| d.distro_name == distro)
-        .map(|d| d.allow_agent_forwarding)
-        .unwrap_or(false);
+    let distro_config = config.distros.iter().find(|d| d.distro_name == distro);
+    let allow_agent_forwarding = distro_config.map(|d| d.allow_agent_forwarding).unwrap_or(false);
+    let auto_restart = distro_config.map(|d| d.auto_restart).unwrap_or(true);
+    // watchdog_restart_count comes from in-memory watchdog state; we pass 0 here since
+    // get_distro_status doesn't have access to AppState. Commands that call this function
+    // can optionally overlay this value from state.relay_watchdog_state.
+    let watchdog_restart_count = 0u8;
 
     if !distro_running {
         return DistroBridgeStatus {
@@ -466,12 +467,18 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
             socat_installed: false,
             systemd_available: false,
             relay_mode,
+            auto_restart,
+            watchdog_restart_count,
+            relay_script_stale: false,
+            detected_shells: Vec::new(),
+            socket_path: socket_path.clone(),
             error: Some("Distro is not running".to_string()),
         };
     }
 
     let socat_installed = wsl_service::has_socat(distro);
     let systemd_available = wsl_service::has_systemd(distro);
+    let detected_shells = wsl_service::detect_shells(distro);
 
     // relay_installed: script exists + (systemd unit exists OR daemon mode)
     let script_installed = wsl_service::wsl_file_exists(distro, &format!("~/{}", RELAY_SCRIPT_PATH));
@@ -531,6 +538,12 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         None
     };
 
+    let relay_script_stale = if relay_installed {
+        is_relay_script_stale(distro, config)
+    } else {
+        false
+    };
+
     DistroBridgeStatus {
         distro_name: distro.to_string(),
         wsl_version,
@@ -545,6 +558,11 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         socat_installed,
         systemd_available,
         relay_mode,
+        auto_restart,
+        watchdog_restart_count,
+        relay_script_stale,
+        detected_shells,
+        socket_path,
         error,
     }
 }
@@ -582,10 +600,54 @@ pub fn get_bridge_overview(config: &BridgeConfig) -> BridgeOverview {
 
 // ── Shell env management ──
 
-fn configure_shell_env(distro: &str, socket_path: &str, relay_mode: &RelayMode) -> Result<(), MazeSshError> {
-    let block = generate_bashrc_block(socket_path, relay_mode);
+fn generate_fish_block(socket_path: &str, relay_mode: &RelayMode) -> String {
+    match relay_mode {
+        RelayMode::Systemd => format!(
+            "{begin}\nset -x SSH_AUTH_SOCK \"{socket_path}\"\n{end}\n",
+            begin = BRIDGE_MARKER_BEGIN,
+            socket_path = socket_path,
+            end = BRIDGE_MARKER_END,
+        ),
+        RelayMode::Daemon => format!(
+            r#"{begin}
+set -x MAZE_SSH_SOCKET "{socket_path}"
+if not test -S $MAZE_SSH_SOCKET
+    nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &
+    sleep 0.5
+end
+set -x SSH_AUTH_SOCK $MAZE_SSH_SOCKET
+{end}
+"#,
+            begin = BRIDGE_MARKER_BEGIN,
+            socket_path = socket_path,
+            end = BRIDGE_MARKER_END,
+        ),
+    }
+}
 
-    for rc_file in &["~/.bashrc", "~/.profile"] {
+fn configure_shell_env(distro: &str, socket_path: &str, relay_mode: &RelayMode) -> Result<(), MazeSshError> {
+    let bash_block = generate_bashrc_block(socket_path, relay_mode);
+    let fish_block = generate_fish_block(socket_path, relay_mode);
+
+    // Detect installed shells
+    let shells = wsl_service::detect_shells(distro);
+
+    for shell_profile in &shells {
+        if !shell_profile.is_installed {
+            continue;
+        }
+
+        let (rc_file, block) = if shell_profile.shell == "fish" {
+            (shell_profile.rc_file.as_str(), fish_block.as_str())
+        } else {
+            (shell_profile.rc_file.as_str(), bash_block.as_str())
+        };
+
+        // Ensure parent directory exists for fish
+        if shell_profile.shell == "fish" {
+            let _ = wsl_service::run_in_wsl(distro, &["mkdir", "-p", "~/.config/fish"]);
+        }
+
         let current = wsl_service::run_in_wsl(distro, &["cat", rc_file])
             .map(|o| o.stdout)
             .unwrap_or_default();
@@ -594,11 +656,32 @@ fn configure_shell_env(distro: &str, socket_path: &str, relay_mode: &RelayMode) 
         wsl_service::wsl_write_file(distro, rc_file, &new_content)?;
     }
 
+    // Always write ~/.profile for login shells regardless of detected shells
+    {
+        let current = wsl_service::run_in_wsl(distro, &["cat", "~/.profile"])
+            .map(|o| o.stdout)
+            .unwrap_or_default();
+        let cleaned = remove_marker_block(&current);
+        let new_content = format!("{}\n{}", cleaned.trim_end(), bash_block);
+        wsl_service::wsl_write_file(distro, "~/.profile", &new_content)?;
+    }
+
     Ok(())
 }
 
 fn remove_shell_env(distro: &str) -> Result<(), MazeSshError> {
-    for rc_file in &["~/.bashrc", "~/.profile"] {
+    let shells = wsl_service::detect_shells(distro);
+
+    let mut rc_files: Vec<&str> = shells
+        .iter()
+        .filter(|s| s.is_installed)
+        .map(|s| s.rc_file.as_str())
+        .collect();
+
+    // Always clean ~/.profile too
+    rc_files.push("~/.profile");
+
+    for rc_file in rc_files {
         let current = wsl_service::run_in_wsl(distro, &["cat", rc_file])
             .map(|o| o.stdout)
             .unwrap_or_default();
@@ -656,11 +739,12 @@ pub fn run_diagnostics(distro: &str, config: &BridgeConfig) -> DiagnosticsResult
     let relay_mode = resolve_relay_mode(config, distro);
     let socket_path = resolve_socket_path(config, distro);
     let relay_binary = provider.relay_binary();
+    let relay_installed = wsl_service::wsl_file_exists(distro, &format!("~/{}", crate::models::bridge::RELAY_SCRIPT_PATH));
 
     let mut steps: Vec<DiagnosticsStep> = Vec::new();
     let mut first_fail: Option<usize> = None;
 
-    let mut add_step = |name: &str, passed: bool, detail: Option<String>| {
+    let mut add_step = |name: &str, passed: bool, detail: Option<String>, remediation: Option<String>| {
         if !passed && first_fail.is_none() {
             first_fail = Some(steps.len());
         }
@@ -668,12 +752,13 @@ pub fn run_diagnostics(distro: &str, config: &BridgeConfig) -> DiagnosticsResult
             name: name.to_string(),
             passed,
             detail,
+            remediation_cmd: if passed { None } else { remediation },
         });
     };
 
     // Step 1: Provider reachable
     let ps = provider_health::check_provider(&provider);
-    add_step("Provider reachable", ps.available, ps.error.clone());
+    add_step("Provider reachable", ps.available, ps.error.clone(), None);
 
     // Step 2: Relay binary installed
     let binary_ok = is_relay_binary_installed(relay_binary);
@@ -682,13 +767,13 @@ pub fn run_diagnostics(distro: &str, config: &BridgeConfig) -> DiagnosticsResult
     } else {
         None
     };
-    add_step("Relay binary installed", binary_ok, binary_detail);
+    add_step("Relay binary installed", binary_ok, binary_detail, None);
 
     // Step 3: Distro running
     let distro_running = wsl_service::run_in_wsl(distro, &["echo", "ok"])
         .map(|o| o.stdout.trim() == "ok")
         .unwrap_or(false);
-    add_step("Distro running", distro_running, None);
+    add_step("Distro running", distro_running, None, None);
 
     // Step 4: Service / relay active
     let service_active = match relay_mode {
@@ -706,13 +791,23 @@ pub fn run_diagnostics(distro: &str, config: &BridgeConfig) -> DiagnosticsResult
         RelayMode::Systemd => "Relay service (systemd)",
         RelayMode::Daemon => "Relay process (daemon)",
     };
-    add_step(mode_label, service_active, None);
+    let service_remediation = match relay_mode {
+        RelayMode::Systemd => Some("systemctl --user start maze-ssh-relay.service".to_string()),
+        RelayMode::Daemon => Some("nohup ~/.local/bin/maze-ssh-relay.sh &>/dev/null &".to_string()),
+    };
+    add_step(mode_label, service_active, None, service_remediation);
 
     // Step 5: Socket exists
     let socket_ok = wsl_service::run_in_wsl(distro, &["test", "-S", &socket_path])
         .map(|o| o.success)
         .unwrap_or(false);
-    add_step("Unix socket exists", socket_ok, Some(socket_path.clone()));
+    // If socket missing but service is installed, suggest removing stale socket and restarting
+    let socket_remediation = if relay_installed && !socket_ok {
+        Some(format!("rm -f {} && systemctl --user restart maze-ssh-relay.service", socket_path))
+    } else {
+        None
+    };
+    add_step("Unix socket exists", socket_ok, Some(socket_path.clone()), socket_remediation);
 
     // Step 6: Keys visible
     let keys_visible: Vec<String> = if socket_ok {
@@ -736,6 +831,7 @@ pub fn run_diagnostics(distro: &str, config: &BridgeConfig) -> DiagnosticsResult
         "Keys visible through bridge",
         keys_count > 0,
         Some(format!("{} key(s) accessible", keys_count)),
+        None,
     );
 
     let suggestions = match first_fail {
@@ -765,6 +861,163 @@ pub fn get_relay_logs(distro: &str, lines: u32) -> Result<String, MazeSshError> 
     })
 }
 
+// ── Relay watchdog ──
+
+/// Poll all enabled distros and restart any relay that unexpectedly stopped.
+/// Called every 30 seconds from the background timer in lib.rs.
+///
+/// Safety: On first poll (distro not in watchdog_state) we record the current state
+/// WITHOUT restarting — this prevents false restarts right after app launch.
+#[cfg(feature = "desktop")]
+pub async fn poll_and_restart_relays(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    use tauri::Manager;
+
+    let state = app.state::<crate::state::AppState>();
+
+    // Skip while app is locked
+    if let Ok(security) = state.security.lock() {
+        if security.is_locked {
+            return;
+        }
+    }
+
+    let config = match state.bridge.read() {
+        Ok(c) => c.clone(),
+        Err(_) => return,
+    };
+
+    for distro_cfg in &config.distros {
+        if !distro_cfg.enabled || !distro_cfg.auto_restart {
+            continue;
+        }
+
+        let distro = distro_cfg.distro_name.clone();
+
+        // get_distro_status is blocking — run in blocking thread
+        let distro_clone = distro.clone();
+        let config_clone = config.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            get_distro_status(&distro_clone, &config_clone)
+        })
+        .await;
+
+        let status = match status {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let currently_active = status.service_active;
+
+        // Resolve max_restarts from config (default 5 if not found)
+        let max_restarts = config.distros.iter()
+            .find(|d| d.distro_name == distro)
+            .map(|d| d.max_restarts)
+            .unwrap_or(5);
+
+        // Determine action without holding the guard across any await.
+        // Drop the guard before any .await to avoid Send issues with MutexGuard.
+        enum WatchdogAction {
+            Init,          // First poll — record state, do nothing
+            AlreadyPaused, // Hit max_restarts, skip and notify
+            Restart,       // Was active, now dead, under retry cap
+            Update,  // Just update was_active (no restart needed)
+        }
+
+        let action = {
+            use crate::state::WatchdogEntry;
+            let mut watchdog = match state.relay_watchdog_state.lock() {
+                Ok(w) => w,
+                Err(_) => continue,
+            };
+
+            match watchdog.get_mut(&distro) {
+                None => {
+                    // First poll — record current state, no restart
+                    watchdog.insert(distro.clone(), WatchdogEntry {
+                        was_active: currently_active,
+                        restart_count: 0,
+                        last_restart_at: None,
+                    });
+                    WatchdogAction::Init
+                }
+                Some(entry) => {
+                    // Reset restart count when relay comes back healthy
+                    if currently_active {
+                        entry.restart_count = 0;
+                    }
+
+                    if entry.was_active && !currently_active {
+                        if entry.restart_count >= max_restarts {
+                            WatchdogAction::AlreadyPaused
+                        } else {
+                            entry.restart_count += 1;
+                            entry.last_restart_at = Some(std::time::Instant::now());
+                            WatchdogAction::Restart
+                        }
+                    } else {
+                        entry.was_active = currently_active;
+                        WatchdogAction::Update
+                    }
+                }
+            }
+            // Guard dropped here — before any await
+        };
+
+        match action {
+            WatchdogAction::Init | WatchdogAction::Update => {
+                // Nothing to do
+            }
+            WatchdogAction::AlreadyPaused => {
+                // Emit paused event so in-app UI can show the badge
+                let _ = app.emit("relay-restart-failed", serde_json::json!({
+                    "distro": distro,
+                    "count": max_restarts,
+                }));
+                // Emit native OS notification for users with the app minimized to tray
+                #[cfg(feature = "desktop")]
+                {
+                    use tauri_plugin_notification::NotificationExt;
+                    let _ = app.notification()
+                        .builder()
+                        .title("Maze SSH: Bridge Relay Stopped")
+                        .body(&format!(
+                            "Auto-restart paused for {} after {} attempts. Open Maze SSH to investigate.",
+                            distro, max_restarts
+                        ))
+                        .show();
+                }
+            }
+            WatchdogAction::Restart => {
+                let distro_clone = distro.clone();
+                let config_clone = config.clone();
+
+                let relay_mode = config_clone
+                    .distros
+                    .iter()
+                    .find(|d| d.distro_name == distro_clone)
+                    .map(|d| d.relay_mode.clone())
+                    .unwrap_or_default();
+
+                let restarted = tokio::task::spawn_blocking(move || {
+                    restart_relay(&distro_clone, &relay_mode)
+                })
+                .await;
+
+                if restarted.map(|r| r.is_ok()).unwrap_or(false) {
+                    let _ = app.emit("relay-restarted", distro.clone());
+                    // Update was_active to true on success
+                    if let Ok(mut w) = state.relay_watchdog_state.lock() {
+                        if let Some(entry) = w.get_mut(&distro) {
+                            entry.was_active = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Generic marker-block removal helper
 fn remove_block_between(content: &str, begin: &str, end: &str) -> String {
     let mut result = String::new();
@@ -786,6 +1039,227 @@ fn remove_block_between(content: &str, begin: &str, end: &str) -> String {
     }
 
     result
+}
+
+// ── Phase 7: relay script drift, RC viewer, SSH host test ──
+
+/// Compare the installed relay script against what the current config would generate.
+/// Returns true if they differ (i.e. the script is stale).
+fn is_relay_script_stale(distro: &str, config: &BridgeConfig) -> bool {
+    let provider = resolve_provider(config, distro);
+    let socket_path = resolve_socket_path(config, distro);
+    let relay_binary = provider.relay_binary();
+    let relay_wsl = relay_binary_wsl_path(relay_binary);
+
+    let expected = generate_relay_script(&provider, &relay_wsl, &socket_path);
+
+    let installed = wsl_service::run_in_wsl(distro, &["cat", &format!("~/{}", RELAY_SCRIPT_PATH)])
+        .map(|o| if o.success { o.stdout } else { String::new() })
+        .unwrap_or_default();
+
+    // Normalize: trim each line, compare content
+    let normalize = |s: &str| -> String {
+        s.lines().map(|l| l.trim_end()).collect::<Vec<_>>().join("\n")
+    };
+    normalize(&expected) != normalize(&installed)
+}
+
+/// Rewrite the relay script from the current config and restart the service — no teardown needed.
+pub fn refresh_relay_script(distro: &str, config: &BridgeConfig) -> Result<(), MazeSshError> {
+    let provider = resolve_provider(config, distro);
+    let socket_path = resolve_socket_path(config, distro);
+    let relay_mode = resolve_relay_mode(config, distro);
+    let relay_binary = provider.relay_binary();
+    let relay_wsl = relay_binary_wsl_path(relay_binary);
+
+    let script = generate_relay_script(&provider, &relay_wsl, &socket_path);
+    let script_path = format!("~/{}", RELAY_SCRIPT_PATH);
+
+    wsl_service::wsl_write_file(distro, &script_path, &script)?;
+    wsl_service::run_in_wsl(distro, &["chmod", "+x", &script_path])
+        .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
+
+    match relay_mode {
+        RelayMode::Systemd => {
+            wsl_service::run_in_wsl(distro, &["systemctl", "--user", "daemon-reload"])
+                .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
+            wsl_service::run_in_wsl(distro, &["systemctl", "--user", "restart", "maze-ssh-relay.service"])
+                .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
+        }
+        RelayMode::Daemon => {
+            // Kill existing process (ignore error if not running)
+            let _ = wsl_service::run_in_wsl(distro, &["pkill", "-f", "maze-ssh-relay.sh"]);
+            // Re-launch
+            wsl_service::run_in_wsl(distro, &["bash", "-c",
+                &format!("nohup {} &>/dev/null &", script_path)])
+                .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Return the current Maze SSH injection block for each known shell RC file.
+pub fn get_shell_injections(distro: &str) -> Vec<crate::models::bridge::ShellInjection> {
+    use crate::models::bridge::ShellInjection;
+
+    let rc_files: &[(&str, &str)] = &[
+        ("bash",    "~/.bashrc"),
+        ("zsh",     "~/.zshrc"),
+        ("fish",    "~/.config/fish/config.fish"),
+        ("profile", "~/.profile"),
+    ];
+
+    let mut result = Vec::new();
+
+    for (shell, rc_file) in rc_files {
+        let content = wsl_service::run_in_wsl(distro, &["cat", rc_file])
+            .map(|o| if o.success { Some(o.stdout) } else { None })
+            .unwrap_or(None);
+
+        let injected_block = content.as_deref().and_then(|s| {
+            extract_marker_block(s, BRIDGE_MARKER_BEGIN, BRIDGE_MARKER_END)
+        });
+
+        result.push(ShellInjection {
+            shell: shell.to_string(),
+            rc_file: rc_file.to_string(),
+            injected_block,
+            has_forward_block: false,
+        });
+    }
+
+    // Check ~/.ssh/config for ForwardAgent block
+    let ssh_config_content = wsl_service::run_in_wsl(distro, &["cat", "~/.ssh/config"])
+        .map(|o| if o.success { Some(o.stdout) } else { None })
+        .unwrap_or(None);
+    let has_forward_block = ssh_config_content
+        .as_deref()
+        .map(|s| s.contains(FORWARD_MARKER_BEGIN))
+        .unwrap_or(false);
+
+    // Attach has_forward_block to the profile entry (most relevant location)
+    if let Some(entry) = result.iter_mut().find(|e| e.shell == "profile") {
+        entry.has_forward_block = has_forward_block;
+    }
+
+    result
+}
+
+/// Extract the text between two markers (inclusive of the markers).
+fn extract_marker_block(content: &str, begin: &str, end: &str) -> Option<String> {
+    let mut in_block = false;
+    let mut lines = Vec::new();
+    for line in content.lines() {
+        if line.trim() == begin {
+            in_block = true;
+        }
+        if in_block {
+            lines.push(line);
+        }
+        if in_block && line.trim() == end {
+            return Some(lines.join("\n"));
+        }
+    }
+    None
+}
+
+/// Remove the injection block from one RC file (allowlisted paths only).
+pub fn remove_single_shell_injection(distro: &str, rc_file: &str) -> Result<(), MazeSshError> {
+    const ALLOWED: &[&str] = &[
+        "~/.bashrc",
+        "~/.zshrc",
+        "~/.profile",
+        "~/.config/fish/config.fish",
+    ];
+    if !ALLOWED.contains(&rc_file) {
+        return Err(MazeSshError::BridgeError(format!(
+            "RC file not in allowlist: {}",
+            rc_file
+        )));
+    }
+
+    let content = wsl_service::run_in_wsl(distro, &["cat", rc_file])
+        .map_err(|e| MazeSshError::BridgeError(e.to_string()))?
+        .stdout;
+
+    let cleaned = remove_marker_block(&content);
+    wsl_service::wsl_write_file(distro, rc_file, &cleaned)?;
+    Ok(())
+}
+
+/// Run a real SSH connection test through the bridged socket.
+pub fn test_ssh_via_bridge(
+    distro: &str,
+    config: &BridgeConfig,
+    host: &str,
+    user: &str,
+    port: u16,
+) -> Result<crate::models::bridge::SshHostTestResult, MazeSshError> {
+    use crate::models::bridge::SshHostTestResult;
+
+    // Validate host: non-empty, no shell metacharacters
+    if host.is_empty() {
+        return Err(MazeSshError::BridgeError("Host cannot be empty".to_string()));
+    }
+    let forbidden_chars = [';', '&', '|', '$', '`', '(', ')', '\\', '"', '\'', '\n'];
+    if host.chars().any(|c| forbidden_chars.contains(&c)) {
+        return Err(MazeSshError::BridgeError(
+            "Host contains invalid characters".to_string(),
+        ));
+    }
+
+    // Validate user: alphanumeric + - . _ @ only, max 64 chars
+    if user.is_empty() {
+        return Err(MazeSshError::BridgeError("User cannot be empty".to_string()));
+    }
+    if user.len() > 64 {
+        return Err(MazeSshError::BridgeError("User too long (max 64 chars)".to_string()));
+    }
+    if !user.chars().all(|c| c.is_alphanumeric() || "-._@".contains(c)) {
+        return Err(MazeSshError::BridgeError(
+            "User contains invalid characters".to_string(),
+        ));
+    }
+
+    // port is u16 so 1–65535 is guaranteed by the type
+
+    let socket_path = resolve_socket_path(config, distro);
+    let cmd = format!(
+        "env SSH_AUTH_SOCK={socket} ssh -T -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=8 -p {port} {user}@{host}",
+        socket = socket_path,
+        port = port,
+        user = user,
+        host = host,
+    );
+
+    let output = wsl_service::run_in_wsl(distro, &["bash", "-c", &cmd])
+        .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
+
+    let combined = format!("{}{}", output.stdout, output.stderr);
+    let lower = combined.to_lowercase();
+
+    let connected = !lower.contains("connection refused")
+        && !lower.contains("connection timed out")
+        && !lower.contains("timed out")
+        && !lower.contains("no route to host")
+        && !lower.contains("could not resolve hostname");
+
+    let authenticated = output.success
+        || lower.contains("successfully authenticated")
+        || lower.contains("pty allocation request failed")
+        || lower.contains("welcome to")
+        || lower.contains("you've successfully authenticated");
+
+    let exit_code = if output.success { 0i32 } else { 1i32 };
+
+    Ok(SshHostTestResult {
+        command: cmd,
+        output: combined.trim().to_string(),
+        connected,
+        authenticated,
+        exit_code,
+    })
 }
 
 fn remove_marker_block(content: &str) -> String {

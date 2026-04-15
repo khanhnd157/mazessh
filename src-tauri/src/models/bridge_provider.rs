@@ -178,6 +178,19 @@ pub struct RelayBinaryStatus {
     pub path: String,
 }
 
+/// Update availability for a relay binary compared to the latest GitHub release
+#[derive(Debug, Clone, Serialize)]
+pub struct BinaryUpdateStatus {
+    /// "npiperelay" | "wsl-ssh-pageant"
+    pub binary: String,
+    /// Installed version tag (from bin-version.json), None if not installed
+    pub installed_version: Option<String>,
+    /// Latest available version tag from GitHub, None if check failed
+    pub latest_version: Option<String>,
+    /// true if both versions are known and they differ
+    pub update_available: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

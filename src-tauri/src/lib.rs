@@ -45,6 +45,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(app_state)
         .setup(|app| {
             // Build tray menu
@@ -111,6 +112,15 @@ pub fn run() {
                     tokio::time::sleep(Duration::from_secs(15)).await;
                     session_service::check_inactivity_and_lock(&timer_handle);
                     session_service::check_agent_expiry(&timer_handle);
+                }
+            });
+
+            // Start relay watchdog timer (30s interval)
+            let watchdog_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    bridge_service::poll_and_restart_relays(&watchdog_app).await;
                 }
             });
 
@@ -207,6 +217,19 @@ pub fn run() {
             commands::bridge::get_relay_logs,
             commands::bridge::get_relay_binary_versions,
             commands::bridge::download_relay_binary,
+            commands::bridge::set_auto_restart,
+            commands::bridge::check_relay_binary_updates,
+            commands::bridge::set_distro_socket_path,
+            commands::bridge::reset_watchdog_restart_count,
+            commands::bridge::run_diagnostic_fix,
+            commands::bridge::scan_windows_named_pipes,
+            commands::bridge::export_bridge_config,
+            commands::bridge::import_bridge_config,
+            commands::bridge::bootstrap_all_distros,
+            commands::bridge::refresh_relay_script,
+            commands::bridge::get_shell_injections,
+            commands::bridge::remove_shell_injection,
+            commands::bridge::test_ssh_via_bridge,
             // Tray
             update_tray_tooltip,
         ])

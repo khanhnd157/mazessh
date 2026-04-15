@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use crate::error::MazeSshError;
-use crate::models::bridge_provider::{BinaryVersion, DownloadProgress, RelayBinary};
+use crate::models::bridge_provider::{BinaryUpdateStatus, BinaryVersion, DownloadProgress, RelayBinary};
 use crate::services::profile_service;
 
 #[cfg(feature = "desktop")]
@@ -202,4 +202,40 @@ pub async fn download_binary(binary: RelayBinary, app: &AppHandle) -> Result<(),
 #[cfg(not(feature = "desktop"))]
 pub async fn download_binary(_binary: RelayBinary, _app: &()) -> Result<(), MazeSshError> {
     Err(MazeSshError::BridgeError("Not available in CLI mode".to_string()))
+}
+
+// ── Update check ──
+
+/// Check for available updates for all relay binaries.
+/// Compares installed version (from bin-version.json) against GitHub latest release.
+/// On network error, returns entries with latest_version=None, update_available=false.
+pub async fn check_for_updates() -> Vec<BinaryUpdateStatus> {
+    let installed = get_installed_versions();
+    let mut results = Vec::new();
+
+    for binary in RelayBinary::all() {
+        let installed_version = match binary {
+            RelayBinary::Npiperelay => installed.npiperelay.clone(),
+            RelayBinary::WslSshPageant => installed.wsl_ssh_pageant.clone(),
+        };
+
+        let latest_version = fetch_release_info(*binary)
+            .await
+            .map(|(tag, _)| tag)
+            .ok();
+
+        let update_available = match (&installed_version, &latest_version) {
+            (Some(inst), Some(latest)) => inst != latest,
+            _ => false,
+        };
+
+        results.push(BinaryUpdateStatus {
+            binary: binary.version_key().to_string(),
+            installed_version,
+            latest_version,
+            update_available,
+        });
+    }
+
+    results
 }

@@ -1,9 +1,48 @@
 use std::io::Write;
 use std::process::Stdio;
 
+use serde::{Deserialize, Serialize};
+
 use crate::error::MazeSshError;
 use crate::models::bridge::WslDistro;
 use crate::services::ssh_engine::hidden_cmd;
+
+/// A shell detected inside a WSL distro
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShellProfile {
+    pub shell: String,   // "bash" | "zsh" | "fish"
+    pub rc_file: String, // "~/.bashrc" | "~/.zshrc" | "~/.config/fish/config.fish"
+    pub is_installed: bool,
+}
+
+/// Detect which shells are installed in a WSL distro.
+/// bash is always included (it's always present in WSL even if not in PATH).
+pub fn detect_shells(distro: &str) -> Vec<ShellProfile> {
+    let shells: &[(&str, &str)] = &[
+        ("bash", "~/.bashrc"),
+        ("zsh", "~/.zshrc"),
+        ("fish", "~/.config/fish/config.fish"),
+    ];
+
+    shells
+        .iter()
+        .map(|(shell, rc_file)| {
+            let is_installed = if *shell == "bash" {
+                // bash is always present in WSL
+                true
+            } else {
+                run_in_wsl(distro, &["which", shell])
+                    .map(|o| o.success)
+                    .unwrap_or(false)
+            };
+            ShellProfile {
+                shell: shell.to_string(),
+                rc_file: rc_file.to_string(),
+                is_installed,
+            }
+        })
+        .collect()
+}
 
 /// Output from a command executed inside WSL
 pub struct CmdOutput {
