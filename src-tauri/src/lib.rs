@@ -118,6 +118,13 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Ensure vault directory exists
+            {
+                let state = app.state::<AppState>();
+                let vault_dir = state.vault_dir.clone();
+                let _ = std::fs::create_dir_all(vault_dir.join("keys"));
+            }
+
             // Start background security timer (15s interval)
             let timer_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -249,6 +256,21 @@ pub fn run() {
             commands::bridge::preview_windows_ssh_host,
             commands::bridge::upsert_windows_ssh_host,
             commands::bridge::remove_windows_ssh_host,
+            // Vault
+            commands::vault::vault_get_state,
+            commands::vault::vault_init,
+            commands::vault::vault_unlock,
+            commands::vault::vault_lock,
+            commands::vault::vault_change_passphrase,
+            commands::vault::vault_generate_key,
+            commands::vault::vault_import_key,
+            commands::vault::vault_list_keys,
+            commands::vault::vault_get_key,
+            commands::vault::vault_update_key,
+            commands::vault::vault_delete_key,
+            commands::vault::vault_archive_key,
+            commands::vault::vault_export_public_key,
+            commands::vault::vault_export_private_key,
             // Tray
             update_tray_tooltip,
         ])

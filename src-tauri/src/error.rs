@@ -59,6 +59,34 @@ pub enum MazeSshError {
 
     #[error("Bridge error: {0}")]
     BridgeError(String),
+
+    #[error("Vault error: {0}")]
+    VaultError(String),
+
+    #[error("Vault is locked")]
+    VaultLocked,
+
+    #[error("Vault not initialized")]
+    VaultNotInitialized,
+
+    #[error("Consent denied by user")]
+    ConsentDenied,
+
+    #[error("Consent timed out")]
+    ConsentTimeout,
+}
+
+impl From<maze_vault::VaultError> for MazeSshError {
+    fn from(e: maze_vault::VaultError) -> Self {
+        match e {
+            maze_vault::VaultError::Locked => MazeSshError::VaultLocked,
+            maze_vault::VaultError::NotInitialized(_) => MazeSshError::VaultNotInitialized,
+            maze_vault::VaultError::InvalidPassphrase => {
+                MazeSshError::SecurityError("Invalid vault passphrase".to_string())
+            }
+            other => MazeSshError::VaultError(other.to_string()),
+        }
+    }
 }
 
 impl Serialize for MazeSshError {

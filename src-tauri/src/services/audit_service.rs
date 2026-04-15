@@ -49,6 +49,17 @@ fn rotate_log(path: &std::path::Path) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// Convenience wrapper for vault/key operations
+pub fn log_action(action: &str, key_name: Option<&str>, result: &str) {
+    append_log(&AuditEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        action: action.to_string(),
+        profile_name: key_name.map(String::from),
+        result: result.to_string(),
+        ..Default::default()
+    });
+}
+
 pub fn read_logs(
     limit: usize,
     offset: usize,

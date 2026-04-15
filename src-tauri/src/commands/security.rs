@@ -17,6 +17,12 @@ pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
     security.is_locked = true;
     drop(security);
 
+    // Lock vault session (zeroize VEK)
+    {
+        let mut vault_guard = state.vault_session.lock().map_err(|_| MazeSshError::StateLockError)?;
+        *vault_guard = None; // Drop triggers ZeroizeOnDrop
+    }
+
     // Emit IMMEDIATELY so UI locks instantly
     let _ = app.emit("lock-state-changed", serde_json::json!({ "is_locked": true }));
 
@@ -127,6 +133,21 @@ pub fn verify_pin(mut pin: String, state: State<'_, AppState>) -> Result<bool, M
             result: "success".to_string(),
             ..Default::default()
         });
+
+        // Auto-unlock vault if SameAsPin mode
+        {
+            let vault_unlock_mode = security.settings.vault_unlock_mode;
+            drop(security); // release before vault operation (Argon2 is slow)
+            if vault_unlock_mode == crate::models::security::VaultUnlockMode::SameAsPin
+                && maze_vault::SshKeyVault::is_initialized(&state.vault_dir)
+            {
+                if let Ok(session) = maze_vault::SshKeyVault::unlock(&pin, &state.vault_dir) {
+                    if let Ok(mut guard) = state.vault_session.lock() {
+                        *guard = Some(session);
+                    }
+                }
+            }
+        }
     } else {
         let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
         security.failed_pin_attempts += 1;

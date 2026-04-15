@@ -18,29 +18,32 @@ path = "src/bin/cli.rs"
 tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
+maze-crypto = { path = "../crates/maze-crypto" }
+maze-vault = { path = "../crates/maze-vault" }
 tauri = { version = "2", features = ["tray-icon"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-shell = { version = "2", optional = true }
 tauri-plugin-fs = { version = "2", optional = true }
 tauri-plugin-process = { version = "2", optional = true }
 tauri-plugin-notification = { version = "2", optional = true }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
 dirs = "6"
 tokio = { version = "1", features = ["full"] }
 glob = "0.3"
-chrono = { version = "0.4", features = ["serde"] }
-thiserror = "2"
+chrono = { workspace = true }
+thiserror = { workspace = true }
 keyring = { version = "3", features = ["windows-native"] }
 dunce = "1"
-argon2 = "0.5"
-rand = "0.8"
+argon2 = { workspace = true }
+rand = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 colored = "3"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 futures-util = "0.3"
-zeroize = "1"
+zeroize = { workspace = true }
+base64 = { workspace = true }
 
 [features]
 default = ["desktop"]
