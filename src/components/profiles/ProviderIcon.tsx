@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { GitFork, Globe, Waypoints } from "lucide-react";
 import type { Provider } from "@/types";
 
@@ -7,7 +8,7 @@ interface ProviderIconProps {
   className?: string;
 }
 
-export function ProviderIcon({ provider, size = 16, className = "" }: ProviderIconProps) {
+export const ProviderIcon = memo(function ProviderIcon({ provider, size = 16, className = "" }: ProviderIconProps) {
   const providerKey = typeof provider === "string" ? provider : "custom";
 
   switch (providerKey) {
@@ -22,4 +23,4 @@ export function ProviderIcon({ provider, size = 16, className = "" }: ProviderIc
     default:
       return <Globe size={size} className={`text-purple-400 ${className}`} />;
   }
-}
+});

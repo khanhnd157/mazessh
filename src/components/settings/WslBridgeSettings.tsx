@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Monitor,
   Link,
@@ -156,6 +156,11 @@ export function WslBridgePanel() {
     }
   };
 
+  const unbootstrappedCount = useMemo(
+    () => overview?.distros.filter((d) => d.distro_running && !d.relay_installed).length ?? 0,
+    [overview?.distros],
+  );
+
   return (
     <div className="space-y-6 max-w-2xl">
       {/* Header */}
@@ -201,10 +206,10 @@ export function WslBridgePanel() {
           ) : (
             <>
               {/* Setup All button — shown when multiple distros need bootstrapping */}
-              {overview.distros.filter((d) => d.distro_running && !d.relay_installed).length > 1 && (
+              {unbootstrappedCount > 1 && (
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
-                    {overview.distros.filter((d) => d.distro_running && !d.relay_installed).length} distros ready to setup
+                    {unbootstrappedCount} distros ready to setup
                   </span>
                   <button
                     type="button"
