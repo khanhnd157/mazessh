@@ -323,6 +323,14 @@ pub fn vault_archive_key(id: String, state: State<'_, AppState>) -> Result<(), M
     Ok(())
 }
 
+#[tauri::command]
+pub fn vault_activate_key(id: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+    SshKeyVault::activate_key(&id, &state.vault_dir)?;
+    audit_service::log_action("vault_activate_key", Some(&id), "success");
+    Ok(())
+}
+
 // ── Export ────────────────────────────────────────────────────────
 
 #[tauri::command]

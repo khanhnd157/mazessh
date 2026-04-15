@@ -29,6 +29,7 @@ interface VaultStore {
   importKey: (request: ImportKeyRequest) => Promise<SshKeyItem>;
   updateKey: (id: string, input: UpdateKeyRequest) => Promise<void>;
   archiveKey: (id: string) => Promise<void>;
+  activateKey: (id: string) => Promise<void>;
   deleteKey: (id: string) => Promise<void>;
   getMigrationPreview: () => Promise<MigrationPreview>;
   migrateProfiles: (ids: string[]) => Promise<MigrationReport>;
@@ -158,6 +159,22 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
     }));
     try {
       await commands.vaultArchiveKey(id);
+    } catch (err) {
+      await get().fetchKeys();
+      throw err;
+    }
+  },
+
+  activateKey: async (id) => {
+    // Optimistic: flip state in list immediately
+    set((s) => ({
+      keys: s.keys.map((k) => (k.id === id ? { ...k, state: "active" as const } : k)),
+      selectedKey: s.selectedKey?.id === id
+        ? { ...s.selectedKey, state: "active" as const }
+        : s.selectedKey,
+    }));
+    try {
+      await commands.vaultActivateKey(id);
     } catch (err) {
       await get().fetchKeys();
       throw err;

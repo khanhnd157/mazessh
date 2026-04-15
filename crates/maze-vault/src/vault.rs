@@ -336,6 +336,21 @@ impl SshKeyVault {
         Ok(())
     }
 
+    /// Set key state back to Active.
+    pub fn activate_key(id: &str, vault_dir: &Path) -> Result<(), VaultError> {
+        let mut meta = load_meta(vault_dir)?;
+        let key = meta
+            .keys
+            .iter_mut()
+            .find(|k| k.id == id)
+            .ok_or_else(|| VaultError::KeyNotFound(id.to_string()))?;
+
+        key.state = KeyState::Active;
+        key.updated_at = Utc::now();
+        save_meta(&meta, vault_dir)?;
+        Ok(())
+    }
+
     // ── Export ───────────────────────────────────────────────────
 
     /// Return the OpenSSH public key string.

@@ -237,6 +237,7 @@ export const commands = {
     invoke<SshKeyItem>("vault_update_key", { id, request }),
   vaultDeleteKey: (id: string) => invoke<void>("vault_delete_key", { id }),
   vaultArchiveKey: (id: string) => invoke<void>("vault_archive_key", { id }),
+  vaultActivateKey: (id: string) => invoke<void>("vault_activate_key", { id }),
   vaultExportPublicKey: (id: string) => invoke<string>("vault_export_public_key", { id }),
   vaultExportPrivateKey: (id: string) => invoke<string>("vault_export_private_key", { id }),
 

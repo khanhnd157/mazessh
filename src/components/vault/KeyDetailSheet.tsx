@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { X, Copy, Check, Archive, Trash2, KeyRound } from "lucide-react";
+import { X, Copy, Check, Archive, ArchiveRestore, Trash2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { useVaultStore } from "@/stores/vaultStore";
 import { commands } from "@/lib/tauri-commands";
@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function KeyDetailSheet({ keyItem, onClose }: Props) {
-  const { archiveKey, deleteKey } = useVaultStore();
+  const { archiveKey, activateKey, deleteKey } = useVaultStore();
   const [activeTab, setActiveTab] = useState<SubTab>("overview");
   const [showDelete, setShowDelete] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
@@ -37,6 +37,12 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
     toast.success(`Key "${keyItem.name}" archived`);
     onClose();
   }, [archiveKey, keyItem.id, keyItem.name, onClose]);
+
+  const handleActivate = useCallback(async () => {
+    await activateKey(keyItem.id);
+    toast.success(`Key "${keyItem.name}" activated`);
+    onClose();
+  }, [activateKey, keyItem.id, keyItem.name, onClose]);
 
   const handleDelete = useCallback(async () => {
     await deleteKey(keyItem.id);
@@ -125,9 +131,13 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
               <InfoRow label="Updated" value={new Date(keyItem.updated_at).toLocaleDateString()} />
 
               <div className="pt-3 border-t flex gap-2">
-                {keyItem.state === "active" && (
+                {keyItem.state === "active" ? (
                   <button type="button" onClick={() => setShowArchive(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors">
                     <Archive size={12} /> Archive
+                  </button>
+                ) : (
+                  <button type="button" onClick={handleActivate} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-success/10 text-success hover:bg-success/20 transition-colors">
+                    <ArchiveRestore size={12} /> Activate
                   </button>
                 )}
                 <button type="button" onClick={() => setShowDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors">
@@ -205,7 +215,7 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
       <ConfirmDialog
         open={showArchive}
         title={`Archive "${keyItem.name}"?`}
-        description="Archived keys cannot be used for signing. You can unarchive by contacting support or re-importing."
+        description="Archived keys cannot be used for signing. You can re-activate the key at any time."
         confirmLabel="Archive"
         variant="warning"
         onConfirm={handleArchive}

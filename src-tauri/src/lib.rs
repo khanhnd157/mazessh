@@ -281,6 +281,7 @@ pub fn run() {
             commands::vault::vault_update_key,
             commands::vault::vault_delete_key,
             commands::vault::vault_archive_key,
+            commands::vault::vault_activate_key,
             commands::vault::vault_export_public_key,
             commands::vault::vault_export_private_key,
             commands::vault::get_migration_preview,
