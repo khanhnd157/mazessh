@@ -14,21 +14,31 @@ fn hidden_cmd(program: &str) -> Command {
     cmd
 }
 
-fn find_git_binary() -> String {
+/// Locate the git binary in trusted, hardcoded paths only.
+///
+/// Does NOT fall back to PATH resolution — that would allow a local attacker
+/// who controls PATH to substitute a malicious git binary.  This mirrors the
+/// policy used by `find_ssh_add` in ssh_engine.rs.
+fn find_git_binary() -> Result<String, crate::error::MazeSshError> {
     let candidates = [
         "C:\\Program Files\\Git\\cmd\\git.exe",
         "C:\\Program Files (x86)\\Git\\cmd\\git.exe",
     ];
     for c in &candidates {
         if Path::new(c).exists() {
-            return c.to_string();
+            return Ok(c.to_string());
         }
     }
-    "git".to_string()
+    Err(crate::error::MazeSshError::GitConfigError(
+        "git not found in trusted locations \
+         (checked 'C:\\Program Files\\Git\\cmd\\git.exe' and the x86 equivalent). \
+         Please install Git for Windows."
+            .to_string(),
+    ))
 }
 
 pub fn set_git_identity_global(name: &str, email: &str) -> Result<(), MazeSshError> {
-    let git = find_git_binary();
+    let git = find_git_binary()?;
 
     let name_out = hidden_cmd(&git)
         .args(["config", "--global", "user.name", name])
@@ -64,7 +74,7 @@ pub fn set_git_identity_local(
     name: &str,
     email: &str,
 ) -> Result<(), MazeSshError> {
-    let git = find_git_binary();
+    let git = find_git_binary()?;
     let repo = repo_path.to_string_lossy();
 
     let name_out = hidden_cmd(&git)
@@ -97,7 +107,7 @@ pub fn set_git_identity_local(
 }
 
 pub fn get_git_identity_global() -> Result<GitIdentityInfo, MazeSshError> {
-    let git = find_git_binary();
+    let git = find_git_binary()?;
 
     let name = hidden_cmd(&git)
         .args(["config", "--global", "user.name"])
@@ -117,7 +127,7 @@ pub fn get_git_identity_global() -> Result<GitIdentityInfo, MazeSshError> {
 }
 
 pub fn get_git_identity_local(repo_path: &Path) -> Result<GitIdentityInfo, MazeSshError> {
-    let git = find_git_binary();
+    let git = find_git_binary()?;
     let repo = repo_path.to_string_lossy();
 
     let name = hidden_cmd(&git)
