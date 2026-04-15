@@ -59,6 +59,34 @@ pub enum MazeSshError {
 
     #[error("Bridge error: {0}")]
     BridgeError(String),
+
+    #[error("Vault error: {0}")]
+    VaultError(String),
+
+    #[error("Vault is locked")]
+    VaultLocked,
+
+    #[error("Vault not initialized")]
+    VaultNotInitialized,
+
+    #[error("Consent denied by user")]
+    ConsentDenied,
+
+    #[error("Consent timed out")]
+    ConsentTimeout,
+}
+
+impl From<maze_vault::VaultError> for MazeSshError {
+    fn from(e: maze_vault::VaultError) -> Self {
+        match e {
+            maze_vault::VaultError::Locked => MazeSshError::VaultLocked,
+            maze_vault::VaultError::NotInitialized(_) => MazeSshError::VaultNotInitialized,
+            maze_vault::VaultError::InvalidPassphrase => {
+                MazeSshError::SecurityError("Invalid vault passphrase".to_string())
+            }
+            other => MazeSshError::VaultError(other.to_string()),
+        }
+    }
 }
 
 impl Serialize for MazeSshError {
@@ -66,6 +94,16 @@ impl Serialize for MazeSshError {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        // Sanitize error messages to avoid leaking full filesystem paths to the frontend
+        let msg = match self {
+            MazeSshError::KeyNotFound(path) => {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+                format!("Key file not found: {name}")
+            }
+            MazeSshError::NotAGitRepo(_) => "Not a git repository".to_string(),
+            MazeSshError::IoError(e) => format!("IO error: {}", e.kind()),
+            other => other.to_string(),
+        };
+        serializer.serialize_str(&msg)
     }
 }

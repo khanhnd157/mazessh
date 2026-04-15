@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager, State};
 use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::profile::ProfileSummary;
+use crate::models::security::AgentMode;
 use crate::services::{git_identity_service, profile_service, security as security_service, ssh_engine};
 use crate::state::AppState;
 
@@ -36,6 +37,13 @@ pub async fn activate_profile(
         security.activation_counter
     };
 
+    // Determine agent mode
+    let agent_mode = state
+        .security
+        .lock()
+        .map(|s| s.settings.agent_mode)
+        .unwrap_or(AgentMode::FileSystem);
+
     // Step 1: Quick state update (instant)
     let (profile, git_ssh_command, key_path) = {
         let mut inner = state.inner.write().map_err(|_| MazeSshError::StateLockError)?;
@@ -48,14 +56,28 @@ pub async fn activate_profile(
 
         inner.active_profile_id = Some(id.clone());
 
-        let git_ssh_command = ssh_engine::build_git_ssh_command(&profile);
+        // Use agent pipe when vault mode, file-based when filesystem mode
+        let git_ssh_command = match agent_mode {
+            AgentMode::Vault => ssh_engine::build_git_ssh_command_agent(&profile),
+            AgentMode::FileSystem => ssh_engine::build_git_ssh_command(&profile),
+        };
         let key_path = profile.private_key_path.to_string_lossy().to_string();
         (profile, git_ssh_command, key_path)
     };
 
     // Step 2: Save to disk (fast)
     profile_service::save_active_profile_id(Some(&id))?;
-    ssh_engine::write_env_file(&profile).map_err(MazeSshError::IoError)?;
+    // Write agent-aware env file
+    match agent_mode {
+        AgentMode::Vault => {
+            let content = ssh_engine::build_env_file_content_agent(&profile);
+            let home = dirs::home_dir().ok_or_else(|| MazeSshError::ConfigError("Home not found".into()))?;
+            std::fs::write(home.join(".maze-ssh").join("env"), content).map_err(MazeSshError::IoError)?;
+        }
+        AgentMode::FileSystem => {
+            ssh_engine::write_env_file(&profile).map_err(MazeSshError::IoError)?;
+        }
+    }
 
     let profile_name = profile.name.clone();
     let profile_for_bg = profile.clone();
@@ -75,28 +97,36 @@ pub async fn activate_profile(
 
         let mut status_parts: Vec<String> = Vec::new();
 
-        // Set persistent user environment variable
-        match ssh_engine::set_user_env_git_ssh_command(&profile_for_bg) {
+        // Set persistent user environment variable (uses the agent-aware command)
+        let env_cmd = match agent_mode {
+            AgentMode::Vault => ssh_engine::build_git_ssh_command_agent(&profile_for_bg),
+            AgentMode::FileSystem => ssh_engine::build_git_ssh_command(&profile_for_bg),
+        };
+        match ssh_engine::set_user_env_git_ssh_command_value(&env_cmd) {
             Ok(()) => status_parts.push("GIT_SSH_COMMAND set".to_string()),
             Err(e) => status_parts.push(format!("Env var failed: {}", e)),
         }
 
-        // Start SSH agent and add key
-        // If the key has a passphrase, retrieve it from keyring and pass to ssh-add
-        let passphrase = if profile_for_bg.has_passphrase {
-            security_service::get_passphrase(&profile_id_for_bg).ok().flatten()
+        if agent_mode == AgentMode::Vault {
+            // Vault mode: MazeSSH Agent handles signing via named pipe
+            status_parts.push("Using MazeSSH Agent (vault mode)".to_string());
         } else {
-            None
-        };
-        match ssh_engine::ensure_agent_running() {
-            Ok(true) => match ssh_engine::agent_switch_key(&key_path, passphrase.as_deref()) {
-                Ok(_) => status_parts.push("Key loaded into ssh-agent".to_string()),
-                Err(e) => status_parts.push(format!("ssh-add failed: {}", e)),
-            },
-            Ok(false) => {
-                status_parts.push("Could not start ssh-agent (may need admin)".to_string())
+            // FileSystem mode: load key into Windows ssh-agent via ssh-add
+            let passphrase = if profile_for_bg.has_passphrase {
+                security_service::get_passphrase(&profile_id_for_bg).ok().flatten()
+            } else {
+                None
+            };
+            match ssh_engine::ensure_agent_running() {
+                Ok(true) => match ssh_engine::agent_switch_key(&key_path, passphrase.as_ref().map(|p| p.as_str())) {
+                    Ok(_) => status_parts.push("Key loaded into ssh-agent".to_string()),
+                    Err(e) => status_parts.push(format!("ssh-add failed: {}", e)),
+                },
+                Ok(false) => {
+                    status_parts.push("Could not start ssh-agent (may need admin)".to_string())
+                }
+                Err(e) => status_parts.push(format!("Agent error: {}", e)),
             }
-            Err(e) => status_parts.push(format!("Agent error: {}", e)),
         }
 
         // Sync global git identity
@@ -108,7 +138,7 @@ pub async fn activate_profile(
             Err(e) => status_parts.push(format!("Git identity failed: {}", e)),
         }
 
-        let success = status_parts.iter().any(|s| s.contains("loaded"));
+        let success = status_parts.iter().any(|s| s.contains("MazeSSH Agent") || s.contains("loaded"));
         let status = status_parts.join(" | ");
 
         let _ = app_bg.emit(

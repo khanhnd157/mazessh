@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type Tab = "profiles" | "repos" | "config" | "bridge" | "settings";
+export type Tab = "profiles" | "vault" | "repos" | "config" | "bridge" | "settings";
 
 interface UiStore {
   activeTab: Tab;

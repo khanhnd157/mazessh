@@ -30,12 +30,45 @@ pub fn build_git_ssh_command(profile: &SshProfile) -> String {
     }
 }
 
+/// Build GIT_SSH_COMMAND that routes through MazeSSH Agent named pipe.
+/// Used when agent_mode = Vault.
+pub fn build_git_ssh_command_agent(profile: &SshProfile) -> String {
+    let pipe = crate::services::agent_service::PIPE_NAME;
+    let port = profile.port_or_default();
+
+    if port == 22 {
+        format!(
+            "ssh -o \"IdentityAgent={}\" -o StrictHostKeyChecking=accept-new",
+            pipe
+        )
+    } else {
+        format!(
+            "ssh -o \"IdentityAgent={}\" -p {} -o StrictHostKeyChecking=accept-new",
+            pipe, port
+        )
+    }
+}
+
 pub fn build_env_file_content(profile: &SshProfile) -> String {
     let ssh_command = build_git_ssh_command(profile);
     let mut content = String::new();
     content.push_str(&format!("export GIT_SSH_COMMAND='{}'\n", ssh_command));
     content.push_str(&format!(
         "# Active profile: {} ({})\n",
+        profile.name, profile.provider
+    ));
+    content
+}
+
+/// Build env file content that routes through MazeSSH Agent.
+pub fn build_env_file_content_agent(profile: &SshProfile) -> String {
+    let ssh_command = build_git_ssh_command_agent(profile);
+    let pipe = crate::services::agent_service::PIPE_NAME;
+    let mut content = String::new();
+    content.push_str(&format!("export GIT_SSH_COMMAND='{}'\n", ssh_command));
+    content.push_str(&format!("export SSH_AUTH_SOCK='{}'\n", pipe));
+    content.push_str(&format!(
+        "# Active profile: {} ({}) — via MazeSSH Agent\n",
         profile.name, profile.provider
     ));
     content
@@ -203,6 +236,12 @@ pub fn agent_list_keys() -> Result<String, String> {
 /// prevents command injection via crafted key paths.
 pub fn set_user_env_git_ssh_command(profile: &SshProfile) -> Result<(), String> {
     let ssh_command = build_git_ssh_command(profile);
+    set_user_env_git_ssh_command_value(&ssh_command)
+}
+
+/// Set GIT_SSH_COMMAND with an explicit command string value.
+pub fn set_user_env_git_ssh_command_value(ssh_command: &str) -> Result<(), String> {
+    let ssh_command = ssh_command.to_string();
 
     hidden_cmd("powershell")
         .args([
@@ -269,6 +308,7 @@ mod tests {
             has_passphrase: false,
             created_at: "2024-01-01T00:00:00Z".to_string(),
             updated_at: "2024-01-01T00:00:00Z".to_string(),
+            vault_key_id: None,
         }
     }
 
