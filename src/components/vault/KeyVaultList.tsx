@@ -201,7 +201,7 @@ export function KeyVaultList() {
               key={key.id}
               item={key}
               selected={selectedKeyId === key.id}
-              onClick={() => selectKey(key.id)}
+              onSelect={selectKey}
             />
           ))}
         </div>

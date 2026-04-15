@@ -62,14 +62,19 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     setProfileMappings([]);
     setMappingsLoading(true);
     setFingerprintLoading(true);
-    commands.getRepoMappingsForProfile(profile.id)
-      .then(setProfileMappings)
+    Promise.all([
+      commands.getRepoMappingsForProfile(profile.id),
+      commands.getKeyFingerprint(profile.id),
+    ])
+      .then(([mappings, fp]) => {
+        setProfileMappings(mappings);
+        setFingerprint(fp);
+      })
       .catch(() => {})
-      .finally(() => setMappingsLoading(false));
-    commands.getKeyFingerprint(profile.id)
-      .then(setFingerprint)
-      .catch(() => {})
-      .finally(() => setFingerprintLoading(false));
+      .finally(() => {
+        setMappingsLoading(false);
+        setFingerprintLoading(false);
+      });
   }, [profile.id]);
 
   const { confirmProps, confirm } = useConfirm();

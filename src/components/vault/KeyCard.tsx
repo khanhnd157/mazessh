@@ -4,7 +4,7 @@ import type { SshKeyItemSummary } from "@/types";
 interface Props {
   item: SshKeyItemSummary;
   selected: boolean;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }
 
 function formatCreatedAt(iso: string): string {
@@ -12,11 +12,11 @@ function formatCreatedAt(iso: string): string {
   return `Created ${Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString()}`;
 }
 
-export const KeyCard = memo(function KeyCard({ item, selected, onClick }: Props) {
+export const KeyCard = memo(function KeyCard({ item, selected, onSelect }: Props) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => onSelect(item.id)}
       className={`w-full text-left rounded-lg p-3 transition-all duration-100 border ${
         selected
           ? "bg-primary/8 border-primary/25 ring-1 ring-primary/20"

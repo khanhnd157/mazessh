@@ -30,11 +30,16 @@ export function TitleBar() {
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
-    const unlisten = appWindow.onResized(async () => {
-      setMaximized(await appWindow.isMaximized());
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const unlisten = appWindow.onResized(() => {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(async () => {
+        setMaximized(await appWindow.isMaximized());
+      }, 120);
     });
     appWindow.isMaximized().then(setMaximized);
     return () => {
+      if (timeout) clearTimeout(timeout);
       unlisten.then((fn) => fn());
     };
   }, [appWindow]);
