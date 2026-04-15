@@ -94,6 +94,16 @@ impl Serialize for MazeSshError {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        // Sanitize error messages to avoid leaking full filesystem paths to the frontend
+        let msg = match self {
+            MazeSshError::KeyNotFound(path) => {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+                format!("Key file not found: {name}")
+            }
+            MazeSshError::NotAGitRepo(_) => "Not a git repository".to_string(),
+            MazeSshError::IoError(e) => format!("IO error: {}", e.kind()),
+            other => other.to_string(),
+        };
+        serializer.serialize_str(&msg)
     }
 }
