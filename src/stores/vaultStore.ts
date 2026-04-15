@@ -99,18 +99,44 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
 
   generateKey: async (input) => {
     const key = await commands.vaultGenerateKey(input);
-    await get().fetchKeys();
+    // Optimistic append — avoids a full list re-fetch
+    set((s) => ({
+      keys: [
+        ...s.keys,
+        {
+          id: key.id,
+          name: key.name,
+          algorithm: key.algorithm,
+          fingerprint: key.fingerprint,
+          state: key.state,
+          created_at: key.created_at,
+        },
+      ],
+    }));
     return key;
   },
 
   importKey: async (request) => {
     const key = await commands.vaultImportKey(request);
-    await get().fetchKeys();
+    set((s) => ({
+      keys: [
+        ...s.keys,
+        {
+          id: key.id,
+          name: key.name,
+          algorithm: key.algorithm,
+          fingerprint: key.fingerprint,
+          state: key.state,
+          created_at: key.created_at,
+        },
+      ],
+    }));
     return key;
   },
 
   updateKey: async (id, input) => {
     await commands.vaultUpdateKey(id, input);
+    // Refresh full list and selected key since name/comment may have changed
     await get().fetchKeys();
     if (get().selectedKeyId === id) {
       await get().selectKey(id);
@@ -118,19 +144,34 @@ export const useVaultStore = create<VaultStore>((set, get) => ({
   },
 
   archiveKey: async (id) => {
-    await commands.vaultArchiveKey(id);
-    await get().fetchKeys();
-    if (get().selectedKeyId === id) {
-      await get().selectKey(id);
+    // Optimistic: flip state in list immediately
+    set((s) => ({
+      keys: s.keys.map((k) => (k.id === id ? { ...k, state: "archived" as const } : k)),
+      selectedKey: s.selectedKey?.id === id
+        ? { ...s.selectedKey, state: "archived" as const }
+        : s.selectedKey,
+    }));
+    try {
+      await commands.vaultArchiveKey(id);
+    } catch (err) {
+      await get().fetchKeys();
+      throw err;
     }
   },
 
   deleteKey: async (id) => {
-    await commands.vaultDeleteKey(id);
-    if (get().selectedKeyId === id) {
-      set({ selectedKeyId: null, selectedKey: null });
+    // Optimistic: remove from list immediately
+    set((s) => ({
+      keys: s.keys.filter((k) => k.id !== id),
+      selectedKeyId: s.selectedKeyId === id ? null : s.selectedKeyId,
+      selectedKey: s.selectedKeyId === id ? null : s.selectedKey,
+    }));
+    try {
+      await commands.vaultDeleteKey(id);
+    } catch (err) {
+      await get().fetchKeys();
+      throw err;
     }
-    await get().fetchKeys();
   },
 
   getMigrationPreview: async () => {

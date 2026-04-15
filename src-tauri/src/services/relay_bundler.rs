@@ -2,9 +2,18 @@
 ///
 /// Downloads npiperelay.exe and wsl-ssh-pageant.exe from GitHub Releases,
 /// tracks installed versions in ~/.maze-ssh/bin/bin-version.json.
+///
+/// # Integrity verification
+/// After downloading a binary the SHA256 digest is computed and compared against
+/// a companion `<asset>.sha256` file published in the same GitHub Release.
+/// If the upstream repo does not publish a checksum file the download still
+/// proceeds but a `binary-download-warning` event is emitted so the UI can
+/// alert the user. A hash mismatch is always a hard error and the file is
+/// never written to disk.
 use std::path::PathBuf;
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::error::MazeSshError;
 use crate::models::bridge_provider::{BinaryUpdateStatus, BinaryVersion, DownloadProgress, RelayBinary};
@@ -52,9 +61,17 @@ fn record_version(binary: RelayBinary, tag: &str) -> Result<(), MazeSshError> {
 
 // ── GitHub API helpers ──
 
+/// Metadata returned from a GitHub Release lookup.
+struct ReleaseInfo {
+    tag: String,
+    download_url: String,
+    /// URL of a companion `<asset>.sha256` file, if the repo publishes one.
+    checksum_url: Option<String>,
+}
+
 /// Fetch the latest release metadata from GitHub API.
-/// Returns `(tag_name, download_url)` for the target asset.
-async fn fetch_release_info(binary: RelayBinary) -> Result<(String, String), MazeSshError> {
+/// Returns `ReleaseInfo` for the target asset, including the checksum URL when available.
+async fn fetch_release_info(binary: RelayBinary) -> Result<ReleaseInfo, MazeSshError> {
     let url = format!(
         "https://api.github.com/repos/{}/releases/latest",
         binary.github_repo()
@@ -106,7 +123,73 @@ async fn fetch_release_info(binary: RelayBinary) -> Result<(String, String), Maz
             ))
         })?;
 
-    Ok((tag, download_url))
+    // Look for a companion checksum file: "<asset>.sha256" or "sha256sums.txt"
+    let checksum_asset_name = format!("{}.sha256", asset_name);
+    let checksum_url = assets
+        .iter()
+        .find(|a| {
+            let name = a["name"].as_str().unwrap_or("");
+            name == checksum_asset_name || name == "sha256sums.txt" || name == "checksums.txt"
+        })
+        .and_then(|a| a["browser_download_url"].as_str())
+        .map(|s| s.to_string());
+
+    Ok(ReleaseInfo { tag, download_url, checksum_url })
+}
+
+/// Download a text file and return its content (used for checksum files).
+async fn download_text(client: &reqwest::Client, url: &str) -> Result<String, MazeSshError> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| MazeSshError::BridgeError(format!("Checksum download failed: {e}")))?;
+
+    if !resp.status().is_success() {
+        return Err(MazeSshError::BridgeError(format!(
+            "Checksum URL returned HTTP {}",
+            resp.status()
+        )));
+    }
+
+    resp.text()
+        .await
+        .map_err(|e| MazeSshError::BridgeError(format!("Failed to read checksum response: {e}")))
+}
+
+/// Compute SHA256 of `data` and return it as a lowercase hex string.
+fn sha256_hex(data: &[u8]) -> String {
+    hex::encode(Sha256::digest(data))
+}
+
+/// Extract the expected SHA256 hex for `asset_name` from a checksum file.
+///
+/// Supports two common formats:
+/// - Single-file `<asset>.sha256`: the entire file is just the hex digest (optionally followed
+///   by whitespace and a filename).
+/// - Multi-file `sha256sums.txt` / `checksums.txt`: each line is
+///   `<hex>  <filename>` or `<hex> *<filename>` (GNU coreutils / BSD shasum style).
+fn parse_expected_checksum(checksum_text: &str, asset_name: &str) -> Option<String> {
+    let text = checksum_text.trim();
+
+    // Single-value file: whole file is just the hex hash (64 hex chars)
+    if text.len() == 64 && text.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Some(text.to_ascii_lowercase());
+    }
+
+    // Multi-line: find the line matching asset_name
+    for line in text.lines() {
+        let parts: Vec<&str> = line.splitn(2, ' ').collect();
+        if parts.len() == 2 {
+            let hash = parts[0].trim();
+            // filename may be prefixed with '*' (binary mode marker)
+            let fname = parts[1].trim().trim_start_matches('*');
+            if fname == asset_name && hash.len() == 64 {
+                return Some(hash.to_ascii_lowercase());
+            }
+        }
+    }
+    None
 }
 
 // ── Download with progress ──
@@ -116,6 +199,7 @@ pub async fn download_binary(binary: RelayBinary, app: &AppHandle) -> Result<(),
     use futures_util::StreamExt;
 
     let binary_name = binary.version_key().to_string();
+    let asset_name = binary.asset_name();
 
     let emit_progress = |percent: u8, status: &str| {
         let _ = app.emit(
@@ -130,18 +214,65 @@ pub async fn download_binary(binary: RelayBinary, app: &AppHandle) -> Result<(),
 
     emit_progress(0, "downloading");
 
-    // Step 1: fetch release info
-    let (tag, download_url) = fetch_release_info(binary).await.map_err(|e| {
+    // Step 1: fetch release info (includes checksum URL when available)
+    let info = fetch_release_info(binary).await.map_err(|e| {
         emit_progress(0, "error");
         e
     })?;
+    let ReleaseInfo { tag, download_url, checksum_url } = info;
 
-    // Step 2: stream download
     let client = reqwest::Client::builder()
         .user_agent("maze-ssh/1.0")
         .build()
         .map_err(|e| MazeSshError::BridgeError(format!("HTTP client error: {e}")))?;
 
+    // Step 2: download expected checksum (best-effort)
+    let expected_checksum: Option<String> = match checksum_url {
+        Some(ref url) => {
+            match download_text(&client, url).await {
+                Ok(text) => {
+                    let parsed = parse_expected_checksum(&text, asset_name);
+                    if parsed.is_none() {
+                        eprintln!(
+                            "[relay-bundler] checksum file found but could not parse hash \
+                             for asset '{}' — will warn after download",
+                            asset_name
+                        );
+                    }
+                    parsed
+                }
+                Err(e) => {
+                    eprintln!("[relay-bundler] failed to fetch checksum file: {e}");
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
+    // Warn early if no checksum is available (non-blocking — upstream may not publish one)
+    if expected_checksum.is_none() {
+        eprintln!(
+            "[relay-bundler] WARNING: no checksum available for {} {} — \
+             integrity cannot be verified",
+            asset_name, tag
+        );
+        let _ = app.emit(
+            "binary-download-warning",
+            serde_json::json!({
+                "binary": binary_name,
+                "tag": tag,
+                "message": format!(
+                    "No SHA256 checksum found for {} {}. \
+                     The binary will be downloaded but its integrity cannot be verified. \
+                     Only proceed if you trust the source.",
+                    asset_name, tag
+                ),
+            }),
+        );
+    }
+
+    // Step 3: stream download
     let response = client
         .get(&download_url)
         .send()
@@ -182,7 +313,25 @@ pub async fn download_binary(binary: RelayBinary, app: &AppHandle) -> Result<(),
         }
     }
 
-    // Step 3: write to disk
+    // Step 4: verify SHA256 integrity before touching disk
+    let actual_hash = sha256_hex(&bytes);
+    if let Some(ref expected) = expected_checksum {
+        if actual_hash != *expected {
+            emit_progress(0, "error");
+            return Err(MazeSshError::BridgeError(format!(
+                "Integrity check FAILED for {} {}: \
+                 expected SHA256 {}, got {}. \
+                 The file has NOT been saved. This may indicate a supply-chain attack.",
+                asset_name, tag, expected, actual_hash
+            )));
+        }
+        eprintln!(
+            "[relay-bundler] SHA256 verified OK for {} {}: {}",
+            asset_name, tag, actual_hash
+        );
+    }
+
+    // Step 5: write to disk only after successful (or unavailable) integrity check
     let dest = bin_dir().join(binary.filename());
     std::fs::create_dir_all(bin_dir())?;
     std::fs::write(&dest, &bytes).map_err(|e| {
@@ -193,7 +342,7 @@ pub async fn download_binary(binary: RelayBinary, app: &AppHandle) -> Result<(),
         ))
     })?;
 
-    // Step 4: record version
+    // Step 6: record version and computed hash for future reference
     record_version(binary, &tag)?;
 
     emit_progress(100, "done");
@@ -223,7 +372,7 @@ pub async fn check_for_updates() -> Vec<BinaryUpdateStatus> {
 
         let latest_version = fetch_release_info(*binary)
             .await
-            .map(|(tag, _)| tag)
+            .map(|info| info.tag)
             .ok();
 
         let update_available = match (&installed_version, &latest_version) {

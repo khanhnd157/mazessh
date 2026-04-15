@@ -228,6 +228,7 @@ export function SecuritySettingsPanel() {
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Lock after inactivity</span>
           <select
+            aria-label="Lock after inactivity timeout"
             value={settings?.auto_lock_timeout_minutes ?? ""}
             onChange={(e) =>
               handleUpdateSetting({
@@ -245,9 +246,14 @@ export function SecuritySettingsPanel() {
         </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">Lock when minimized to tray</span>
+          <label htmlFor="lock-on-minimize" className="text-xs text-muted-foreground cursor-pointer">
+            Lock when minimized to tray
+          </label>
           <button
+            id="lock-on-minimize"
             type="button"
+            role="switch"
+            aria-checked={settings?.lock_on_minimize ? "true" : "false"}
             onClick={() =>
               handleUpdateSetting({ lock_on_minimize: !settings?.lock_on_minimize })
             }
@@ -277,6 +283,7 @@ export function SecuritySettingsPanel() {
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Clear keys after</span>
           <select
+            aria-label="Clear agent keys after timeout"
             value={settings?.agent_key_timeout_minutes ?? ""}
             onChange={(e) =>
               handleUpdateSetting({

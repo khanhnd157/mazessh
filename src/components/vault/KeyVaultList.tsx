@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, KeyRound, Search, Radio } from "lucide-react";
+import { Plus, KeyRound, Search, Radio, X } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
 import { useVaultStore } from "@/stores/vaultStore";
@@ -60,13 +60,24 @@ export function KeyVaultList() {
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40" />
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/40 pointer-events-none" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search..."
-              className="pl-7 pr-3 py-1.5 text-xs rounded-lg bg-secondary border border-border w-48 focus:outline-none focus:ring-2 focus:ring-ring"
+              aria-label="Search keys"
+              className="pl-7 pr-7 py-1.5 text-xs rounded-lg bg-secondary border border-border w-48 focus:outline-none focus:ring-2 focus:ring-ring"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
           <div className="flex rounded-lg border border-border overflow-hidden">
             {(["all", "active", "archived"] as const).map((s) => (
@@ -144,7 +155,15 @@ export function KeyVaultList() {
             <p className="text-sm text-muted-foreground/50 mb-2">
               {search ? "No keys match your search" : "No keys yet"}
             </p>
-            {!search && (
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="text-xs text-primary hover:underline"
+              >
+                Clear search
+              </button>
+            ) : (
               <button
                 type="button"
                 onClick={() => setShowGenerate(true)}

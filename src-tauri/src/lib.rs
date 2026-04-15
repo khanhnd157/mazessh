@@ -85,7 +85,7 @@ pub fn run() {
             };
 
             let _tray = TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(app.default_window_icon().expect("app icon must be configured in tauri.conf.json").clone())
                 .tooltip(&initial_tooltip)
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -151,11 +151,18 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Lock on minimize if setting enabled
+                // Hide to tray instead of closing; lock vault if the setting is enabled.
+                // Note: Tauri 2 does not expose a Minimized window event on Windows —
+                // locking on taskbar-minimise would require a platform plugin.
+                // The CloseRequested path covers the most common "leave workstation"
+                // scenario (clicking X) until a Minimized event becomes available.
                 let app = window.app_handle();
                 let state = app.state::<AppState>();
                 if let Ok(security) = state.security.lock() {
-                    if security.settings.lock_on_minimize && security.pin_is_set && !security.is_locked {
+                    if security.settings.lock_on_minimize
+                        && security.pin_is_set
+                        && !security.is_locked
+                    {
                         drop(security);
                         let _ = commands::security::do_lock(app);
                     }

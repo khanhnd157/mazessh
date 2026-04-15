@@ -18,4 +18,6 @@ argon2 = "0.5"
 rand = "0.8"
 base64 = "0.22"
 aes-gcm = "0.10"
+sha2 = "0.10"
+hex = "0.4"
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "encryption", "getrandom"] }
