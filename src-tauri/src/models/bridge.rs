@@ -1,6 +1,15 @@
 use serde::{Deserialize, Serialize};
 
 use super::bridge_provider::{BridgeProvider, ProviderStatus, RelayBinaryStatus};
+use crate::services::wsl_service::ShellProfile;
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_max_restarts() -> u8 {
+    5
+}
 
 // ── Relay mode ──
 
@@ -39,6 +48,12 @@ pub struct DistroBridgeConfig {
     /// How the relay service is managed (default: Systemd)
     #[serde(default)]
     pub relay_mode: RelayMode,
+    /// Automatically restart the relay if it stops (default: true)
+    #[serde(default = "default_true")]
+    pub auto_restart: bool,
+    /// Max watchdog auto-restarts before giving up (default: 5)
+    #[serde(default = "default_max_restarts")]
+    pub max_restarts: u8,
 }
 
 // ── Runtime types (returned to frontend) ──
@@ -80,9 +95,50 @@ pub struct DistroBridgeStatus {
     /// How the relay service is managed
     #[serde(default)]
     pub relay_mode: RelayMode,
+    /// Auto-restart the relay if it dies (mirrors config)
+    #[serde(default = "default_true")]
+    pub auto_restart: bool,
+    /// How many times the watchdog has restarted this relay since last healthy observation
+    #[serde(default)]
+    pub watchdog_restart_count: u8,
+    /// True if the installed relay script differs from what the current config would generate
+    #[serde(default)]
+    pub relay_script_stale: bool,
+    /// Shells detected as installed in the distro
+    #[serde(default)]
+    pub detected_shells: Vec<ShellProfile>,
+    /// Resolved socket path (from config, or default)
+    pub socket_path: String,
     /// Last error encountered during checks, if any
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// Content of a Maze SSH injection block in one shell RC file
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShellInjection {
+    pub shell: String,
+    pub rc_file: String,
+    /// The injected block text, or None if no Maze SSH markers were found
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub injected_block: Option<String>,
+    /// True if a ForwardAgent block is present (only relevant for ~/.ssh/config)
+    #[serde(default)]
+    pub has_forward_block: bool,
+}
+
+/// Result of an end-to-end SSH connectivity test through the bridge socket
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshHostTestResult {
+    /// The full command that was run
+    pub command: String,
+    /// Combined stdout + stderr output
+    pub output: String,
+    /// True if a TCP connection was established (transport succeeded)
+    pub connected: bool,
+    /// True if SSH authentication was accepted (heuristic)
+    pub authenticated: bool,
+    pub exit_code: i32,
 }
 
 // ── Diagnostics ──
@@ -105,6 +161,9 @@ pub struct DiagnosticsStep {
     pub passed: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// WSL bash command to auto-fix this step's failure (allowlisted, safe to run)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remediation_cmd: Option<String>,
 }
 
 /// Full bridge overview for the frontend dashboard

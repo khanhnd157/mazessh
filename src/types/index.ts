@@ -191,6 +191,12 @@ export interface WslDistro {
   is_default: boolean;
 }
 
+export interface ShellProfile {
+  shell: string;    // "bash" | "zsh" | "fish"
+  rc_file: string;  // "~/.bashrc" | "~/.zshrc" | "~/.config/fish/config.fish"
+  is_installed: boolean;
+}
+
 export interface DistroBridgeStatus {
   distro_name: string;
   wsl_version: number;
@@ -205,13 +211,34 @@ export interface DistroBridgeStatus {
   socat_installed: boolean;
   systemd_available: boolean;
   relay_mode: RelayMode;
+  auto_restart: boolean;
+  watchdog_restart_count: number;
+  relay_script_stale: boolean;
+  detected_shells: ShellProfile[];
+  socket_path: string;
   error: string | null;
+}
+
+export interface ShellInjection {
+  shell: string;
+  rc_file: string;
+  injected_block: string | null;
+  has_forward_block: boolean;
+}
+
+export interface SshHostTestResult {
+  command: string;
+  output: string;
+  connected: boolean;
+  authenticated: boolean;
+  exit_code: number;
 }
 
 export interface DiagnosticsStep {
   name: string;
   passed: boolean;
   detail: string | null;
+  remediation_cmd: string | null;
 }
 
 export interface DiagnosticsResult {
@@ -230,6 +257,33 @@ export interface DownloadProgress {
   binary: string;
   percent: number;
   status: "downloading" | "done" | "error";
+}
+
+export interface BinaryUpdateStatus {
+  binary: string;                    // "npiperelay" | "wsl_ssh_pageant"
+  installed_version: string | null;
+  latest_version: string | null;
+  update_available: boolean;
+}
+
+export interface RelayRestartedEvent {
+  distro: string;
+}
+
+export interface RelayRestartFailedEvent {
+  distro: string;
+  count: number;
+}
+
+export interface NamedPipeEntry {
+  path: string;
+  display: string;
+}
+
+export interface BootstrapAllResult {
+  distro: string;
+  success: boolean;
+  error: string | null;
 }
 
 export interface BridgeOverview {

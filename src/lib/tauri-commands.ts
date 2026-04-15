@@ -2,7 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ActivationResult,
   AuditEntry,
+  BinaryUpdateStatus,
   BinaryVersion,
+  BootstrapAllResult,
   BridgeOverview,
   BridgeProvider,
   ConfigBackup,
@@ -17,12 +19,15 @@ import type {
   KeyFingerprint,
   KeyHealthReport,
   LockStateResponse,
+  NamedPipeEntry,
   ProfileSummary,
   ProviderStatus,
   RelayMode,
   RepoMapping,
   RepoMappingSummary,
   SecuritySettings,
+  ShellInjection,
+  SshHostTestResult,
   SshProfile,
   UpdateProfileInput,
   WslDistro,
@@ -161,4 +166,36 @@ export const commands = {
     invoke<BinaryVersion>("get_relay_binary_versions"),
   downloadRelayBinary: (binary: string) =>
     invoke<void>("download_relay_binary", { binary }),
+
+  // Bridge Phase 5
+  setAutoRestart: (distro: string, enabled: boolean) =>
+    invoke<void>("set_auto_restart", { distro, enabled }),
+  checkRelayBinaryUpdates: () =>
+    invoke<BinaryUpdateStatus[]>("check_relay_binary_updates"),
+  setDistroSocketPath: (distro: string, socketPath: string) =>
+    invoke<void>("set_distro_socket_path", { distro, socketPath }),
+
+  // Bridge Phase 6
+  resetWatchdogRestartCount: (distro: string) =>
+    invoke<void>("reset_watchdog_restart_count", { distro }),
+  runDiagnosticFix: (distro: string, cmd: string) =>
+    invoke<string>("run_diagnostic_fix", { distro, cmd }),
+  scanWindowsNamedPipes: () =>
+    invoke<NamedPipeEntry[]>("scan_windows_named_pipes"),
+  exportBridgeConfig: () =>
+    invoke<string>("export_bridge_config"),
+  importBridgeConfig: (json: string) =>
+    invoke<number>("import_bridge_config", { json }),
+  bootstrapAllDistros: () =>
+    invoke<BootstrapAllResult[]>("bootstrap_all_distros"),
+
+  // Bridge Phase 7
+  refreshRelayScript: (distro: string) =>
+    invoke<void>("refresh_relay_script", { distro }),
+  getShellInjections: (distro: string) =>
+    invoke<ShellInjection[]>("get_shell_injections", { distro }),
+  removeShellInjection: (distro: string, rcFile: string) =>
+    invoke<void>("remove_shell_injection", { distro, rcFile }),
+  testSshViaBridge: (distro: string, host: string, user: string, port: number) =>
+    invoke<SshHostTestResult>("test_ssh_via_bridge", { distro, host, user, port }),
 };

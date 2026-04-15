@@ -1,5 +1,66 @@
+use serde::Serialize;
+
 use crate::models::bridge_provider::{BridgeProvider, ProviderStatus};
 use crate::services::ssh_engine::hidden_cmd;
+
+/// A Windows named pipe that may host an SSH agent
+#[derive(Debug, Clone, Serialize)]
+pub struct NamedPipeEntry {
+    /// Full Windows path, e.g. `\\.\pipe\openssh-ssh-agent`
+    pub path: String,
+    /// Bare pipe name, e.g. `openssh-ssh-agent`
+    pub display: String,
+}
+
+/// Enumerate named pipes on Windows and return those that look SSH/agent-related.
+///
+/// Uses PowerShell `Get-ChildItem \\.\pipe\` and filters entries whose name
+/// contains "ssh", "agent", or "key" (case-insensitive).
+pub fn scan_named_pipes() -> Vec<NamedPipeEntry> {
+    let ps = r#"Get-ChildItem -Path '\\.\pipe\' | Select-Object -ExpandProperty Name | ConvertTo-Json -Compress"#;
+
+    let output = hidden_cmd("powershell")
+        .args(["-NoProfile", "-Command", ps])
+        .output();
+
+    let raw = match output {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+        _ => return Vec::new(),
+    };
+
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    // ConvertTo-Json returns a JSON string (single item) or JSON array
+    let names: Vec<String> = if trimmed.starts_with('[') {
+        serde_json::from_str(trimmed).unwrap_or_default()
+    } else if trimmed.starts_with('"') {
+        // Single pipe → bare string
+        serde_json::from_str::<String>(trimmed)
+            .map(|s| vec![s])
+            .unwrap_or_default()
+    } else {
+        return Vec::new();
+    };
+
+    let keywords = ["ssh", "agent", "key"];
+    let mut entries: Vec<NamedPipeEntry> = names
+        .into_iter()
+        .filter(|name| {
+            let lower = name.to_lowercase();
+            keywords.iter().any(|kw| lower.contains(kw))
+        })
+        .map(|name| NamedPipeEntry {
+            path: format!(r"\\.\pipe\{}", name),
+            display: name,
+        })
+        .collect();
+
+    entries.sort_by(|a, b| a.display.cmp(&b.display));
+    entries
+}
 
 /// Check all built-in providers and return their Windows-side availability
 pub fn check_all_providers() -> Vec<ProviderStatus> {

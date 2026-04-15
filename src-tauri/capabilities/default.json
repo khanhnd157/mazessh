@@ -20,6 +20,7 @@
     "shell:allow-spawn",
     "shell:allow-stdin-write",
     "fs:default",
-    "process:default"
+    "process:default",
+    "notification:default"
   ]
 }

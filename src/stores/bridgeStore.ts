@@ -1,8 +1,11 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
 import type {
+  BinaryUpdateStatus,
   BinaryVersion,
+  BootstrapAllResult,
   BridgeOverview,
   BridgeProvider,
   DiagnosticsResult,
@@ -10,6 +13,8 @@ import type {
   DownloadProgress,
   ProviderStatus,
   RelayMode,
+  RelayRestartFailedEvent,
+  ShellInjection,
 } from "@/types";
 
 interface BridgeStore {
@@ -19,6 +24,8 @@ interface BridgeStore {
   binaryVersions: BinaryVersion | null;
   downloadProgress: Record<string, number>;
   diagnostics: Record<string, DiagnosticsResult>;
+  updateStatuses: BinaryUpdateStatus[];
+  shellInjections: Record<string, ShellInjection[]>;
   loading: boolean;
 
   fetchOverview: () => Promise<void>;
@@ -35,6 +42,19 @@ interface BridgeStore {
   setEnabled: (distro: string, enabled: boolean) => Promise<void>;
   setDistroProvider: (distro: string, provider: BridgeProvider) => Promise<void>;
   setAgentForwarding: (distro: string, enabled: boolean) => Promise<void>;
+  setAutoRestart: (distro: string, enabled: boolean) => Promise<void>;
+  checkUpdates: () => Promise<void>;
+  setSocketPath: (distro: string, path: string) => Promise<void>;
+  // Phase 6
+  resetRestartCount: (distro: string) => Promise<void>;
+  runFix: (distro: string, cmd: string) => Promise<string>;
+  exportConfig: () => Promise<string>;
+  importConfig: (json: string) => Promise<number>;
+  bootstrapAll: () => Promise<BootstrapAllResult[]>;
+  // Phase 7
+  refreshRelayScript: (distro: string) => Promise<void>;
+  fetchShellInjections: (distro: string) => Promise<void>;
+  removeShellInjection: (distro: string, rcFile: string) => Promise<void>;
 }
 
 export const useBridgeStore = create<BridgeStore>((set, get) => ({
@@ -44,6 +64,8 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   binaryVersions: null,
   downloadProgress: {},
   diagnostics: {},
+  updateStatuses: [],
+  shellInjections: {},
   loading: false,
 
   fetchOverview: async () => {
@@ -149,4 +171,76 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
     await commands.setAgentForwarding(distro, enabled);
     await get().fetchOverview();
   },
+
+  setAutoRestart: async (distro: string, enabled: boolean) => {
+    await commands.setAutoRestart(distro, enabled);
+    await get().fetchOverview();
+  },
+
+  checkUpdates: async () => {
+    const statuses = await commands.checkRelayBinaryUpdates();
+    set({ updateStatuses: statuses });
+  },
+
+  setSocketPath: async (distro: string, path: string) => {
+    await commands.setDistroSocketPath(distro, path);
+    await get().fetchOverview();
+  },
+
+  // Phase 6
+  resetRestartCount: async (distro: string) => {
+    await commands.resetWatchdogRestartCount(distro);
+    await get().fetchOverview();
+  },
+
+  runFix: async (distro: string, cmd: string): Promise<string> => {
+    const output = await commands.runDiagnosticFix(distro, cmd);
+    await get().runDiagnostics(distro);
+    return output;
+  },
+
+  exportConfig: async (): Promise<string> => {
+    return commands.exportBridgeConfig();
+  },
+
+  importConfig: async (json: string): Promise<number> => {
+    const count = await commands.importBridgeConfig(json);
+    await get().fetchOverview();
+    return count;
+  },
+
+  bootstrapAll: async (): Promise<BootstrapAllResult[]> => {
+    const results = await commands.bootstrapAllDistros();
+    await get().fetchOverview();
+    return results;
+  },
+
+  // Phase 7
+  refreshRelayScript: async (distro: string) => {
+    await commands.refreshRelayScript(distro);
+    await get().fetchOverview();
+  },
+
+  fetchShellInjections: async (distro: string) => {
+    const injections = await commands.getShellInjections(distro);
+    set((state) => ({ shellInjections: { ...state.shellInjections, [distro]: injections } }));
+  },
+
+  removeShellInjection: async (distro: string, rcFile: string) => {
+    await commands.removeShellInjection(distro, rcFile);
+    await get().fetchShellInjections(distro);
+  },
 }));
+
+// Listen for relay-restarted events from the watchdog and refresh overview
+listen<string>("relay-restarted", () => {
+  useBridgeStore.getState().fetchOverview();
+}).catch(() => {});
+
+// Listen for relay-restart-failed events (watchdog gave up after max restarts)
+listen<RelayRestartFailedEvent>("relay-restart-failed", (event) => {
+  const { distro, count } = event.payload;
+  toast.warning(`Auto-restart paused for ${distro} after ${count} failed attempts`);
+  useBridgeStore.getState().fetchOverview();
+}).catch(() => {});
+// Note: no unlisten — these listeners persist for the app lifetime

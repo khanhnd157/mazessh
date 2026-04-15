@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { CheckCircle, XCircle, Star } from "lucide-react";
-import type { BridgeProvider, BridgeProviderType, ProviderStatus } from "@/types";
+import { CheckCircle, XCircle, Star, Search, Loader2, X } from "lucide-react";
+import type { BridgeProvider, BridgeProviderType, NamedPipeEntry, ProviderStatus } from "@/types";
+import { commands } from "@/lib/tauri-commands";
 
 const PROVIDER_OPTIONS: { type: BridgeProviderType; label: string; description: string }[] = [
   {
@@ -35,6 +36,9 @@ interface ProviderSelectorProps {
 
 export function ProviderSelector({ selected, providerStatuses, recommended, onChange, disabled }: ProviderSelectorProps) {
   const [customPipePath, setCustomPipePath] = useState(selected.pipe_path ?? "//./pipe/");
+  const [showPipePicker, setShowPipePicker] = useState(false);
+  const [pipes, setPipes] = useState<NamedPipeEntry[]>([]);
+  const [pipesLoading, setPipesLoading] = useState(false);
 
   const getStatus = (type: BridgeProviderType): ProviderStatus | undefined =>
     providerStatuses.find((p) => p.provider.type === type);
@@ -52,6 +56,24 @@ export function ProviderSelector({ selected, providerStatuses, recommended, onCh
     if (selected.type === "custom") {
       onChange({ type: "custom", pipe_path: value });
     }
+  };
+
+  const openPipePicker = async () => {
+    setShowPipePicker(true);
+    setPipesLoading(true);
+    try {
+      const found = await commands.scanWindowsNamedPipes();
+      setPipes(found);
+    } catch {
+      setPipes([]);
+    } finally {
+      setPipesLoading(false);
+    }
+  };
+
+  const selectPipe = (entry: NamedPipeEntry) => {
+    handleCustomPipeChange(entry.path);
+    setShowPipePicker(false);
   };
 
   return (
@@ -112,18 +134,70 @@ export function ProviderSelector({ selected, providerStatuses, recommended, onCh
                 )}
               </button>
 
-              {/* Custom pipe path input */}
+              {/* Custom pipe path input + browse */}
               {opt.type === "custom" && isSelected && (
-                <div className="mt-1 ml-7">
-                  <input
-                    type="text"
-                    value={customPipePath}
-                    onChange={(e) => handleCustomPipeChange(e.target.value)}
-                    placeholder="//./pipe/my-ssh-agent"
-                    disabled={disabled}
-                    className="w-full px-2.5 py-1.5 text-[11px] font-mono rounded-lg bg-secondary border border-border focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30"
-                  />
-                  <p className="text-[9px] text-muted-foreground/50 mt-0.5">Windows named pipe path</p>
+                <div className="mt-1 ml-7 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={customPipePath}
+                      onChange={(e) => handleCustomPipeChange(e.target.value)}
+                      placeholder="//./pipe/my-ssh-agent"
+                      disabled={disabled}
+                      className="flex-1 px-2.5 py-1.5 text-[11px] font-mono rounded-lg bg-secondary border border-border focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={openPipePicker}
+                      disabled={disabled}
+                      className="flex items-center gap-1 px-2 py-1.5 text-[10px] font-medium rounded-lg bg-secondary hover:bg-accent disabled:opacity-50 whitespace-nowrap"
+                    >
+                      <Search size={10} />
+                      Browse
+                    </button>
+                  </div>
+                  <p className="text-[9px] text-muted-foreground/50">Windows named pipe path</p>
+
+                  {/* Pipe picker popup */}
+                  {showPipePicker && (
+                    <div className="rounded-lg border bg-card shadow-lg p-2 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium text-muted-foreground">SSH-related pipes</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowPipePicker(false)}
+                          aria-label="Close pipe picker"
+                          className="text-muted-foreground/60 hover:text-muted-foreground"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+
+                      {pipesLoading ? (
+                        <div className="flex items-center justify-center py-3">
+                          <Loader2 size={14} className="animate-spin text-muted-foreground" />
+                        </div>
+                      ) : pipes.length === 0 ? (
+                        <p className="text-[10px] text-muted-foreground/60 text-center py-2">
+                          No SSH-related pipes found
+                        </p>
+                      ) : (
+                        <div className="space-y-0.5 max-h-40 overflow-y-auto">
+                          {pipes.map((pipe) => (
+                            <button
+                              key={pipe.path}
+                              type="button"
+                              onClick={() => selectPipe(pipe)}
+                              className="w-full text-left px-2 py-1 rounded hover:bg-secondary/60 text-[10px] font-mono truncate"
+                              title={pipe.path}
+                            >
+                              {pipe.display}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

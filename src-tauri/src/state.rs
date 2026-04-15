@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 
@@ -6,10 +7,23 @@ use crate::models::profile::SshProfile;
 use crate::models::repo_mapping::RepoMapping;
 use crate::models::security::SecuritySettings;
 
+/// Per-distro watchdog tracking state (not persisted, reset on app restart)
+pub struct WatchdogEntry {
+    /// Was the relay active on the last poll?
+    pub was_active: bool,
+    /// Number of auto-restarts since last healthy observation
+    pub restart_count: u8,
+    /// When the last restart was attempted
+    pub last_restart_at: Option<Instant>,
+}
+
 pub struct AppState {
     pub inner: RwLock<AppStateInner>,
     pub security: Mutex<SecurityState>,
     pub bridge: RwLock<BridgeConfig>,
+    /// Watchdog state: distro_name → per-distro tracking entry.
+    /// Initialized empty; first-poll entries are set without triggering a restart.
+    pub relay_watchdog_state: Mutex<HashMap<String, WatchdogEntry>>,
 }
 
 pub struct AppStateInner {
@@ -47,6 +61,7 @@ impl AppState {
                 last_failed_attempt: None,
             }),
             bridge: RwLock::new(BridgeConfig::default()),
+            relay_watchdog_state: Mutex::new(HashMap::new()),
         }
     }
 
@@ -74,6 +89,7 @@ impl AppState {
                 last_failed_attempt: None,
             }),
             bridge: RwLock::new(bridge_config),
+            relay_watchdog_state: Mutex::new(HashMap::new()),
         }
     }
 }
