@@ -399,6 +399,15 @@ pub fn delete_original_key_file(
         .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?
         .join(".ssh");
 
+    // Reject symlinks to prevent symlink-following attacks (TOCTOU)
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|e| MazeSshError::ConfigError(format!("Cannot stat path: {e}")))?;
+    if meta.is_symlink() {
+        return Err(MazeSshError::ValidationError(
+            "Refusing to delete symlinks — potential path traversal".to_string(),
+        ));
+    }
+
     let canonical_path = dunce::canonicalize(path)
         .map_err(|e| MazeSshError::ConfigError(format!("Cannot resolve path: {e}")))?;
     let canonical_ssh = dunce::canonicalize(&ssh_dir)
