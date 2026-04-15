@@ -230,6 +230,12 @@ pub fn run() {
             commands::bridge::get_shell_injections,
             commands::bridge::remove_shell_injection,
             commands::bridge::test_ssh_via_bridge,
+            // Phase 8
+            commands::bridge::get_bridge_history,
+            commands::bridge::set_distro_max_restarts,
+            commands::bridge::preview_windows_ssh_host,
+            commands::bridge::upsert_windows_ssh_host,
+            commands::bridge::remove_windows_ssh_host,
             // Tray
             update_tray_tooltip,
         ])

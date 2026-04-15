@@ -1,4 +1,5 @@
 pub mod audit_service;
+pub mod bridge_history_service;
 pub mod bridge_service;
 pub mod relay_bundler;
 pub mod config_engine;

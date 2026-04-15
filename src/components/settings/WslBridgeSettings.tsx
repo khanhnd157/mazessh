@@ -23,16 +23,15 @@ import {
   ClipboardCopy,
   Layers,
   Terminal,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
 import { useBridgeStore } from "@/stores/bridgeStore";
-import type { BinaryUpdateStatus, BootstrapAllResult, BridgeProvider, DistroBridgeStatus, ProviderStatus, RelayMode, ShellInjection } from "@/types";
+import type { BinaryUpdateStatus, BootstrapAllResult, BridgeHistoryEvent, BridgeProvider, DistroBridgeStatus, ProviderStatus, RelayMode, ShellInjection } from "@/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ProviderSelector } from "./ProviderSelector";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
-
-const MAX_RESTARTS_DEFAULT = 5;
 
 const PROVIDER_LABELS: Record<string, string> = {
   "windows-open-ssh": "OpenSSH",
@@ -78,6 +77,12 @@ export function WslBridgePanel() {
     refreshRelayScript,
     fetchShellInjections,
     removeShellInjection,
+    bridgeHistory,
+    fetchBridgeHistory,
+    setMaxRestarts,
+    previewWindowsSshHost,
+    upsertWindowsSshHost,
+    removeWindowsSshHost,
   } = useBridgeStore();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [teardownTarget, setTeardownTarget] = useState<string | null>(null);
@@ -288,6 +293,18 @@ export function WslBridgePanel() {
                     handleAction(`Removed injection from ${rcFile}`, () => removeShellInjection(distro.distro_name, rcFile))
                   }
                   onRefresh={() => fetchOverview()}
+                  historyEvents={bridgeHistory[distro.distro_name] ?? null}
+                  onFetchHistory={() => fetchBridgeHistory(distro.distro_name)}
+                  onMaxRestartsChange={(n) =>
+                    handleAction("Max restarts saved", () => setMaxRestarts(distro.distro_name, n))
+                  }
+                  onPreviewWindowsHost={() => previewWindowsSshHost(distro.distro_name)}
+                  onAddWindowsHost={() =>
+                    handleAction("Windows SSH host added", () => upsertWindowsSshHost(distro.distro_name))
+                  }
+                  onRemoveWindowsHost={() =>
+                    handleAction("Windows SSH host removed", () => removeWindowsSshHost(distro.distro_name))
+                  }
                 />
               ))}
             </>
@@ -571,6 +588,12 @@ function DistroCard({
   onFetchShellInjections,
   onRemoveShellInjection,
   onRefresh,
+  historyEvents,
+  onFetchHistory,
+  onMaxRestartsChange,
+  onPreviewWindowsHost,
+  onAddWindowsHost,
+  onRemoveWindowsHost,
 }: {
   distro: DistroBridgeStatus;
   providers: ProviderStatus[];
@@ -593,6 +616,12 @@ function DistroCard({
   onFetchShellInjections: () => void;
   onRemoveShellInjection: (rcFile: string) => void;
   onRefresh: () => void;
+  historyEvents: BridgeHistoryEvent[] | null;
+  onFetchHistory: () => void;
+  onMaxRestartsChange: (n: number) => void;
+  onPreviewWindowsHost: () => Promise<string>;
+  onAddWindowsHost: () => void;
+  onRemoveWindowsHost: () => void;
 }) {
   const isActionRunning = actionLoading !== null;
   const [relayMode, setRelayMode] = useState<RelayMode>("systemd");
@@ -605,6 +634,11 @@ function DistroCard({
   const [logsLoading, setLogsLoading] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [socketPathInput, setSocketPathInput] = useState(distro.socket_path || "/tmp/maze-ssh-agent.sock");
+  // Phase 8
+  const [showHistory, setShowHistory] = useState(false);
+  const [showWindowsHost, setShowWindowsHost] = useState(false);
+  const [windowsHostPreview, setWindowsHostPreview] = useState<string | null>(null);
+  const [showBridgeAdvanced, setShowBridgeAdvanced] = useState(false);
 
   const handleLoadLogs = async () => {
     setLogsLoading(true);
@@ -875,11 +909,11 @@ function DistroCard({
           )}
 
           {/* Watchdog paused badge */}
-          {distro.auto_restart && distro.relay_mode !== "daemon" && distro.watchdog_restart_count >= MAX_RESTARTS_DEFAULT && (
+          {distro.auto_restart && distro.relay_mode !== "daemon" && distro.watchdog_restart_count >= distro.max_restarts && (
             <div className="flex items-center justify-between py-1 px-2 rounded-lg bg-warning/10 border border-warning/20">
               <div className="flex items-center gap-1.5 text-xs text-warning">
                 <AlertTriangle size={11} />
-                Auto-restart paused ({distro.watchdog_restart_count}/{MAX_RESTARTS_DEFAULT} attempts)
+                Auto-restart paused ({distro.watchdog_restart_count}/{distro.max_restarts} attempts)
               </div>
               <button
                 type="button"
@@ -1111,8 +1145,170 @@ function DistroCard({
                 )}
               </div>
             )}
+
+            {/* ── Phase 8: Health History ── */}
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !showHistory;
+                  setShowHistory(next);
+                  if (next && historyEvents === null) onFetchHistory();
+                }}
+                className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground flex items-center gap-1"
+              >
+                <Clock size={10} />
+                {showHistory ? <><ChevronUp size={10} /> Hide history</> : <><ChevronDown size={10} /> Health history</>}
+              </button>
+              {showHistory && (
+                <div className="space-y-1">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={onFetchHistory}
+                      className="text-muted-foreground/60 hover:text-muted-foreground"
+                      title="Refresh history"
+                    >
+                      <RefreshCw size={11} />
+                    </button>
+                  </div>
+                  {!historyEvents || historyEvents.length === 0 ? (
+                    <p className="text-[10px] text-muted-foreground/50 px-1">No events recorded yet.</p>
+                  ) : (
+                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                      {historyEvents.map((ev, i) => (
+                        <HistoryEventRow key={i} event={ev} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Phase 8: Windows SSH config auto-population ── */}
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={async () => {
+                  const next = !showWindowsHost;
+                  setShowWindowsHost(next);
+                  if (next && windowsHostPreview === null) {
+                    try {
+                      const preview = await onPreviewWindowsHost();
+                      setWindowsHostPreview(preview);
+                    } catch { /* ignore */ }
+                  }
+                }}
+                className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground flex items-center gap-1"
+              >
+                <Settings2 size={10} />
+                {showWindowsHost ? <><ChevronUp size={10} /> Hide Windows SSH host</> : <><ChevronDown size={10} /> Windows SSH config</>}
+              </button>
+              {showWindowsHost && (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-muted-foreground/70">
+                    Add a <code className="font-mono text-[9px]">Host</code> entry to Windows{" "}
+                    <code className="font-mono text-[9px]">~/.ssh/config</code> so Windows SSH clients can connect through this
+                    distro&apos;s bridge socket via <code className="font-mono text-[9px]">ProxyCommand</code>.
+                  </p>
+                  {windowsHostPreview && (
+                    <pre className="text-[10px] font-mono bg-black/20 dark:bg-black/40 rounded-lg p-2 overflow-auto max-h-32 whitespace-pre-wrap text-foreground/70">
+                      {windowsHostPreview}
+                    </pre>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={onAddWindowsHost}
+                      disabled={isActionRunning}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <ExternalLink size={10} /> Add to ~/.ssh/config
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onRemoveWindowsHost}
+                      disabled={isActionRunning}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg text-destructive hover:bg-destructive/10 disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <Trash2 size={10} /> Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Phase 8: max_restarts advanced slider ── */}
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setShowBridgeAdvanced((v) => !v)}
+                className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground flex items-center gap-1"
+              >
+                <Settings2 size={10} />
+                {showBridgeAdvanced ? <><ChevronUp size={10} /> Hide advanced</> : <><ChevronDown size={10} /> Advanced</>}
+              </button>
+              {showBridgeAdvanced && (
+                <div className="space-y-2 pt-1">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-muted-foreground">Watchdog max restarts</label>
+                      <span className="text-[10px] font-mono text-muted-foreground/70">{distro.max_restarts}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={20}
+                      step={1}
+                      value={distro.max_restarts}
+                      onChange={(e) => onMaxRestartsChange(Number(e.target.value))}
+                      disabled={isActionRunning}
+                      title="Max watchdog restarts"
+                      className="w-full h-1.5 accent-primary disabled:opacity-50"
+                    />
+                    <div className="flex justify-between text-[9px] text-muted-foreground/40">
+                      <span>1</span><span>10</span><span>20</span>
+                    </div>
+                    <p className="text-[9px] text-muted-foreground/50">
+                      Watchdog stops retrying after this many failed restart attempts.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Phase 8: History event row sub-component ──
+
+const HISTORY_EVENT_META: Record<string, { label: string; color: string }> = {
+  bridgeStarted:      { label: "Started",    color: "text-success" },
+  bridgeStopped:      { label: "Stopped",    color: "text-muted-foreground" },
+  watchdogRestart:    { label: "WD Restart", color: "text-warning" },
+  watchdogPaused:     { label: "WD Paused",  color: "text-destructive" },
+  relayRefreshed:     { label: "Refreshed",  color: "text-primary" },
+  bridgeBootstrapped: { label: "Bootstrap",  color: "text-success" },
+  bridgeTeardown:     { label: "Teardown",   color: "text-destructive" },
+};
+
+function HistoryEventRow({ event }: { event: BridgeHistoryEvent }) {
+  const meta = HISTORY_EVENT_META[event.event] ?? { label: event.event, color: "text-foreground" };
+  const time = new Date(event.timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  return (
+    <div className="flex items-center gap-2 text-[10px] px-1 py-0.5 hover:bg-secondary/40 rounded">
+      <span className="text-muted-foreground/50 w-16 shrink-0 font-mono">{time}</span>
+      <span className={`font-medium w-20 shrink-0 ${meta.color}`}>{meta.label}</span>
+      {event.detail && (
+        <span className="text-muted-foreground/70 truncate">{event.detail}</span>
       )}
     </div>
   );

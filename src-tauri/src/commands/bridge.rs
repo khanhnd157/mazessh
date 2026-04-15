@@ -4,7 +4,7 @@ use crate::error::MazeSshError;
 use crate::models::bridge::*;
 use crate::models::bridge_provider::*;
 use crate::models::security::AuditEntry;
-use crate::services::{audit_service, bridge_service, provider_health, relay_bundler, wsl_service};
+use crate::services::{audit_service, bridge_history_service, bridge_service, provider_health, relay_bundler, wsl_service};
 use crate::services::provider_health::NamedPipeEntry;
 use crate::state::AppState;
 
@@ -732,4 +732,75 @@ pub fn test_ssh_via_bridge(
     ensure_unlocked(&state)?;
     let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
     bridge_service::test_ssh_via_bridge(&distro, &config, &host, &user, port)
+}
+
+// ── Phase 8 commands ──
+
+/// Return the health history ring buffer for a distro, newest-first, up to `limit` entries.
+#[tauri::command]
+pub fn get_bridge_history(
+    distro: String,
+    limit: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<BridgeHistoryEvent>, MazeSshError> {
+    ensure_unlocked(&state)?;
+    Ok(bridge_history_service::read_events(&distro, limit.min(200) as usize))
+}
+
+/// Update the max watchdog restart count for a distro. Valid range: 1–20.
+#[tauri::command]
+pub fn set_distro_max_restarts(
+    distro: String,
+    max_restarts: u8,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+    if max_restarts < 1 || max_restarts > 20 {
+        return Err(MazeSshError::ValidationError(
+            "max_restarts must be between 1 and 20".to_string(),
+        ));
+    }
+    let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
+    if let Some(d) = config.distros.iter_mut().find(|d| d.distro_name == distro) {
+        d.max_restarts = max_restarts;
+    }
+    bridge_service::save_bridge_config(&config)?;
+    log_bridge_audit("set_max_restarts", &distro, "", &format!("max_restarts set to {max_restarts}"));
+    Ok(())
+}
+
+/// Preview the Windows SSH config Host block that would be written for a distro's WSL socket.
+#[tauri::command]
+pub fn preview_windows_ssh_host(
+    distro: String,
+    state: State<'_, AppState>,
+) -> Result<String, MazeSshError> {
+    ensure_unlocked(&state)?;
+    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
+    Ok(bridge_service::preview_windows_ssh_host(&distro, &config))
+}
+
+/// Write (or refresh) the Host block in Windows `~/.ssh/config` for a distro's WSL socket.
+#[tauri::command]
+pub fn upsert_windows_ssh_host(
+    distro: String,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
+    bridge_service::upsert_windows_ssh_host(&distro, &config)?;
+    log_bridge_audit("windows_ssh_host_add", &distro, "", "Windows SSH config Host added");
+    Ok(())
+}
+
+/// Remove the Host block from Windows `~/.ssh/config` for a distro's WSL socket.
+#[tauri::command]
+pub fn remove_windows_ssh_host(
+    distro: String,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
+    bridge_service::remove_windows_ssh_host(&distro)?;
+    log_bridge_audit("windows_ssh_host_remove", &distro, "", "Windows SSH config Host removed");
+    Ok(())
 }

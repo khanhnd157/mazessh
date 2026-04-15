@@ -6,6 +6,7 @@ import type {
   BinaryUpdateStatus,
   BinaryVersion,
   BootstrapAllResult,
+  BridgeHistoryEvent,
   BridgeOverview,
   BridgeProvider,
   DiagnosticsResult,
@@ -26,6 +27,7 @@ interface BridgeStore {
   diagnostics: Record<string, DiagnosticsResult>;
   updateStatuses: BinaryUpdateStatus[];
   shellInjections: Record<string, ShellInjection[]>;
+  bridgeHistory: Record<string, BridgeHistoryEvent[]>;
   loading: boolean;
 
   fetchOverview: () => Promise<void>;
@@ -55,6 +57,12 @@ interface BridgeStore {
   refreshRelayScript: (distro: string) => Promise<void>;
   fetchShellInjections: (distro: string) => Promise<void>;
   removeShellInjection: (distro: string, rcFile: string) => Promise<void>;
+  // Phase 8
+  fetchBridgeHistory: (distro: string, limit?: number) => Promise<void>;
+  setMaxRestarts: (distro: string, maxRestarts: number) => Promise<void>;
+  previewWindowsSshHost: (distro: string) => Promise<string>;
+  upsertWindowsSshHost: (distro: string) => Promise<void>;
+  removeWindowsSshHost: (distro: string) => Promise<void>;
 }
 
 export const useBridgeStore = create<BridgeStore>((set, get) => ({
@@ -66,6 +74,7 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   diagnostics: {},
   updateStatuses: [],
   shellInjections: {},
+  bridgeHistory: {},
   loading: false,
 
   fetchOverview: async () => {
@@ -230,17 +239,42 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
     await commands.removeShellInjection(distro, rcFile);
     await get().fetchShellInjections(distro);
   },
+
+  // Phase 8
+  fetchBridgeHistory: async (distro: string, limit = 50) => {
+    const events = await commands.getBridgeHistory(distro, limit);
+    set((state) => ({ bridgeHistory: { ...state.bridgeHistory, [distro]: events } }));
+  },
+
+  setMaxRestarts: async (distro: string, maxRestarts: number) => {
+    await commands.setDistroMaxRestarts(distro, maxRestarts);
+    await get().fetchOverview();
+  },
+
+  previewWindowsSshHost: (distro: string) => commands.previewWindowsSshHost(distro),
+
+  upsertWindowsSshHost: async (distro: string) => {
+    await commands.upsertWindowsSshHost(distro);
+  },
+
+  removeWindowsSshHost: async (distro: string) => {
+    await commands.removeWindowsSshHost(distro);
+  },
 }));
 
-// Listen for relay-restarted events from the watchdog and refresh overview
-listen<string>("relay-restarted", () => {
-  useBridgeStore.getState().fetchOverview();
+// Listen for relay-restarted events from the watchdog and refresh overview + history
+listen<string>("relay-restarted", (event) => {
+  const store = useBridgeStore.getState();
+  store.fetchOverview();
+  store.fetchBridgeHistory(event.payload);
 }).catch(() => {});
 
 // Listen for relay-restart-failed events (watchdog gave up after max restarts)
 listen<RelayRestartFailedEvent>("relay-restart-failed", (event) => {
   const { distro, count } = event.payload;
   toast.warning(`Auto-restart paused for ${distro} after ${count} failed attempts`);
-  useBridgeStore.getState().fetchOverview();
+  const store = useBridgeStore.getState();
+  store.fetchOverview();
+  store.fetchBridgeHistory(distro);
 }).catch(() => {});
 // Note: no unlisten — these listeners persist for the app lifetime

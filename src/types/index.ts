@@ -214,6 +214,7 @@ export interface DistroBridgeStatus {
   auto_restart: boolean;
   watchdog_restart_count: number;
   relay_script_stale: boolean;
+  max_restarts: number;
   detected_shells: ShellProfile[];
   socket_path: string;
   error: string | null;
@@ -232,6 +233,23 @@ export interface SshHostTestResult {
   connected: boolean;
   authenticated: boolean;
   exit_code: number;
+}
+
+// ── Phase 8: Health history ring buffer ──
+
+export type BridgeHistoryEventKind =
+  | "bridgeStarted"
+  | "bridgeStopped"
+  | "watchdogRestart"
+  | "watchdogPaused"
+  | "relayRefreshed"
+  | "bridgeBootstrapped"
+  | "bridgeTeardown";
+
+export interface BridgeHistoryEvent {
+  timestamp: string;
+  event: BridgeHistoryEventKind;
+  detail: string | null;
 }
 
 export interface DiagnosticsStep {
