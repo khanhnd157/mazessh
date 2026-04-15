@@ -246,4 +246,13 @@ export const commands = {
     invoke<MigrationReport>("migrate_profiles_to_vault", { profileIds }),
   deleteOriginalKeyFile: (keyPath: string) =>
     invoke<void>("delete_original_key_file", { keyPath }),
+
+  // ── Agent ──
+  getAgentPipePath: () => invoke<string>("get_agent_pipe_path"),
+
+  // ── Consent ──
+  respondToConsent: (consentId: string, approved: boolean, selectedKeyId: string, allowMode: string) =>
+    invoke<void>("respond_to_consent", { consentId, approved, selectedKeyId, allowMode }),
+  getPendingConsent: () =>
+    invoke<{ consent_id: string; key_id: string; key_name: string; process_name: string; host: string } | null>("get_pending_consent"),
 };

@@ -4,11 +4,29 @@ use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 
 use maze_vault::VaultSession;
+use tokio::sync::oneshot;
 
 use crate::models::bridge::BridgeConfig;
 use crate::models::profile::SshProfile;
 use crate::models::repo_mapping::RepoMapping;
 use crate::models::security::SecuritySettings;
+
+/// A pending consent request waiting for user approval.
+pub struct PendingConsent {
+    pub key_id: String,
+    pub key_name: String,
+    pub process_name: String,
+    pub host: String,
+    pub tx: oneshot::Sender<ConsentDecision>,
+}
+
+/// User's decision on a consent request.
+#[derive(Debug, Clone)]
+pub struct ConsentDecision {
+    pub approved: bool,
+    pub selected_key_id: String,
+    pub allow_mode: String, // "once" | "session" | "always"
+}
 
 /// Per-distro watchdog tracking state (not persisted, reset on app restart)
 pub struct WatchdogEntry {
@@ -32,6 +50,9 @@ pub struct AppState {
     pub vault_session: Mutex<Option<VaultSession>>,
     /// Vault directory path (set once at startup, typically ~/.maze-ssh/vault/)
     pub vault_dir: PathBuf,
+    /// Pending consent popups for SSH agent sign requests.
+    /// Key = consent request UUID.
+    pub pending_consents: Mutex<HashMap<String, PendingConsent>>,
 }
 
 pub struct AppStateInner {
@@ -80,6 +101,7 @@ impl AppState {
             relay_watchdog_state: Mutex::new(HashMap::new()),
             vault_session: Mutex::new(None),
             vault_dir,
+            pending_consents: Mutex::new(HashMap::new()),
         }
     }
 
@@ -116,6 +138,7 @@ impl AppState {
             relay_watchdog_state: Mutex::new(HashMap::new()),
             vault_session: Mutex::new(None),
             vault_dir,
+            pending_consents: Mutex::new(HashMap::new()),
         }
     }
 }
