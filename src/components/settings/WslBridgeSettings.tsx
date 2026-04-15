@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
-import { useBridgeStore } from "@/stores/bridgeStore";
+import { useBridgeStore, ensureBridgeListeners } from "@/stores/bridgeStore";
 import type { BinaryUpdateStatus, BootstrapAllResult, BridgeHistoryEvent, BridgeProvider, DistroBridgeStatus, ProviderStatus, RelayMode, ShellInjection } from "@/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ProviderSelector } from "./ProviderSelector";
@@ -91,6 +91,7 @@ export function WslBridgePanel() {
   const [importJson, setImportJson] = useState("");
 
   useEffect(() => {
+    ensureBridgeListeners(); // register relay watchdog listeners once
     fetchOverview();
     fetchRecommended();
     fetchBinaryVersions();

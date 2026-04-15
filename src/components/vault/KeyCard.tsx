@@ -43,7 +43,10 @@ export function KeyCard({ item, selected, onClick }: Props) {
         }`} />
       </div>
       <div className="text-[10px] text-muted-foreground/40 mt-2">
-        Created {new Date(item.created_at).toLocaleDateString()}
+        {(() => {
+          const d = new Date(item.created_at);
+          return `Created ${Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString()}`;
+        })()}
       </div>
     </button>
   );
