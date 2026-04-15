@@ -538,6 +538,7 @@ mod tests {
                 algorithm: KeyAlgorithm::Ed25519,
                 comment: Some("test@host".into()),
                 export_policy: None,
+                allowed_hosts: vec![],
             },
             dir.path(),
         )
@@ -562,13 +563,13 @@ mod tests {
 
         SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Key A".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Key A".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
         SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Key B".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Key B".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
@@ -584,7 +585,7 @@ mod tests {
 
         let created = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "My Key".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "My Key".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
@@ -601,7 +602,7 @@ mod tests {
 
         let item = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Temp".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Temp".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
@@ -623,7 +624,7 @@ mod tests {
 
         let item = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Arch".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Arch".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
@@ -643,7 +644,7 @@ mod tests {
 
         let item = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Pub".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Pub".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
@@ -659,7 +660,7 @@ mod tests {
 
         let item = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Priv".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Priv".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
@@ -685,6 +686,7 @@ mod tests {
                 algorithm: KeyAlgorithm::Ed25519,
                 comment: None,
                 export_policy: Some(ExportPolicy { allow_private_export: false }),
+                allowed_hosts: vec![],
             },
             dir.path(),
         ).unwrap();
@@ -702,7 +704,7 @@ mod tests {
         let session = SshKeyVault::unlock("old_pass", dir.path()).unwrap();
         let item = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Change".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Change".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
         drop(session);
@@ -726,7 +728,7 @@ mod tests {
 
         let item = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Original".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Original".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
@@ -736,6 +738,7 @@ mod tests {
                 name: Some("Renamed".into()),
                 comment: Some("new comment".into()),
                 export_policy: None,
+                allowed_hosts: None,
             },
             dir.path(),
         ).unwrap();
@@ -753,13 +756,13 @@ mod tests {
 
         SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Same Name".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Same Name".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         ).unwrap();
 
         let result = SshKeyVault::generate_key(
             &session,
-            GenerateKeyInput { name: "Same Name".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None },
+            GenerateKeyInput { name: "Same Name".into(), algorithm: KeyAlgorithm::Ed25519, comment: None, export_policy: None, allowed_hosts: vec![] },
             dir.path(),
         );
 
