@@ -4,6 +4,83 @@
 
 All notable changes to Maze SSH are documented in this file.
 
+## [1.1.2] - 2026-04-15
+
+### SSH Key Vault (New)
+
+- Encrypted SSH key vault backed by AES-256-GCM with Argon2id KDF (64 MiB / 3 iterations)
+- Two-layer key hierarchy: passphrase → VMK → VEK → per-key encrypted files
+- VEK held in memory as `VaultSession` with `ZeroizeOnDrop` — cleared automatically on lock
+- Key generation: Ed25519 and RSA 4096 via `ssh-key` crate
+- Key import: accepts OpenSSH PEM (encrypted or plaintext)
+- Key metadata: fingerprint (SHA-256), algorithm, state (active/archived), export policy, per-key allowed hosts
+- Export public key (always allowed) and private key (governed by per-key export policy)
+- Archive and delete keys; delete rejects symlinks and path-traversal attempts
+- Vault tab in UI: key grid with search and state filter, generate/import dialogs, key detail sheet
+- Vault setup prompt (first-time init) and unlock prompt (separate passphrase or shared with PIN)
+- Change vault passphrase without re-encrypting individual key files
+- Vault state hidden from frontend when app is locked
+
+### SSH Agent (New)
+
+- Native Windows SSH agent on named pipe `\\.\pipe\maze-ssh-agent`
+- Implements SSH agent protocol: `request-identities`, `sign-request`, `remove-all-identities`
+- `add-identity` rejected — keys are vault-managed only
+- Named pipe DACL restricts connections to SYSTEM and current user (no other local processes)
+- Per-connection semaphore cap (100 concurrent clients)
+- Pending read buffer cap (1 MB) to prevent memory exhaustion
+- SSH agent protocol message size limit (256 KB) to prevent integer overflow / DoS
+- Process identification on connect via `GetNamedPipeClientProcessId` + `QueryFullProcessImageNameW`
+- Consent popup on first sign request per key: shows key name, fingerprint, requesting process name/path, PID
+- 60-second consent timeout with automatic denial and audit log entry
+- Constant-time key blob comparison (`subtle::ConstantTimeEq`) to prevent timing attacks
+
+### Policy Engine (New)
+
+- Three consent modes: **Once** (single request), **Session** (until app lock), **Always** (persisted rule)
+- Session rules stored in memory, cleared on app lock or restart
+- Persistent "always allow" rules saved to `~/.maze-ssh/policy-rules.json` (`0o600` on Unix)
+- Policy rule management: list, delete individual rule, clear all rules
+- Policy checked before consent popup — pre-approved keys sign without user interaction
+- Host-based routing: keys can be restricted to specific SSH hostnames (`allowed_hosts` field)
+
+### Security Hardening
+
+- All private key PEM bytes zeroized after use in signing and export operations
+- Vault passphrase zeroized in all Tauri command handlers after use
+- Argon2 hash strings wrapped in `Zeroizing<String>` in lock service
+- SSH passphrase `get_passphrase` returns `Zeroizing<String>` across all callers
+- VEK bytes explicitly zeroized in `change_passphrase` after re-encryption
+- Consent commands (`respond_to_consent`, `get_pending_consent`) require app to be unlocked
+- `test_agent_connection` command requires app to be unlocked
+- Error serialization strips filesystem paths before reaching frontend
+- Comprehensive security audit report (`docs/SECURITY_AUDIT.md`, `docs/SECURITY_AUDIT_v2.md`)
+
+### Profile Integration
+
+- `vault_key_id` field on profiles: links a profile to a vault key
+- Agent mode setting: **MazeSSH Vault** (sign via vault) vs **External Agent** (forward to system agent)
+- Vault unlock mode: **Shared PIN** (vault unlocks with app PIN) or **Separate Passphrase**
+- Profile activation uses vault key for signing when agent mode is set to Vault
+- Agent-aware env file generation
+
+### Migration
+
+- Migration wizard: import existing `~/.ssh` key files into vault in bulk
+- Preview shows eligible profiles and skipped profiles with reasons
+- Migrated keys retain passphrase via Windows Credential Manager lookup
+- Original key files not deleted automatically — user confirms deletion per key
+
+### UI
+
+- Vault tab with key grid, search, algorithm/state filter
+- Generate Key dialog: name, algorithm toggle (Ed25519/RSA 4096), comment, export policy
+- Import Key dialog: file drop zone or paste PEM, optional source passphrase
+- Key Detail sheet (slide-in panel): overview, public key copy, security settings, export
+- Migration Wizard: 4-step dialog (intro → preview → progress → results)
+- Agent Mode Settings section in Security tab
+- Consent popup window (separate Tauri window, always-on-top, 60s countdown timer)
+
 ## [1.1.1] - 2026-04-15
 
 ### WSL Bridge (New)
