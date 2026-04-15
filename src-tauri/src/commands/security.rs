@@ -244,7 +244,9 @@ pub fn get_audit_logs(
     limit: u32,
     offset: u32,
     action_filter: Option<String>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<AuditEntry>, MazeSshError> {
+    ensure_unlocked(&state)?;
     Ok(audit_service::read_logs(
         limit as usize,
         offset as usize,

@@ -499,6 +499,36 @@ fn validate_diagnostic_cmd(cmd: &str) -> Result<(), MazeSshError> {
     )))
 }
 
+/// Map a validated diagnostic command to its argv form (no shell interpretation).
+/// Returns `None` only for the nohup variant that requires shell features.
+fn diagnostic_cmd_to_argv(cmd: &str) -> Vec<String> {
+    match cmd {
+        "systemctl --user start maze-ssh-relay.service" => {
+            vec!["systemctl", "--user", "start", "maze-ssh-relay.service"]
+                .into_iter().map(String::from).collect()
+        }
+        "systemctl --user restart maze-ssh-relay.service" => {
+            vec!["systemctl", "--user", "restart", "maze-ssh-relay.service"]
+                .into_iter().map(String::from).collect()
+        }
+        "sudo apt install socat" => {
+            vec!["sudo", "apt", "install", "socat"]
+                .into_iter().map(String::from).collect()
+        }
+        "sudo apt install -y socat" => {
+            vec!["sudo", "apt", "install", "-y", "socat"]
+                .into_iter().map(String::from).collect()
+        }
+        rm_cmd if rm_cmd.starts_with("rm -f ") => {
+            let path = rm_cmd["rm -f ".len()..].to_string();
+            vec!["rm".to_string(), "-f".to_string(), path]
+        }
+        _ => {
+            vec!["bash".to_string(), "-c".to_string(), cmd.to_string()]
+        }
+    }
+}
+
 /// Run an allowlisted one-click fix command inside a WSL distro.
 #[tauri::command]
 pub fn run_diagnostic_fix(
@@ -514,7 +544,9 @@ pub fn run_diagnostic_fix(
     }
     validate_diagnostic_cmd(trimmed)?;
 
-    let result = wsl_service::run_in_wsl(&distro, &["bash", "-c", trimmed])
+    let argv = diagnostic_cmd_to_argv(trimmed);
+    let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let result = wsl_service::run_in_wsl(&distro, &argv_refs)
         .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
 
     let output = if result.stderr.is_empty() {

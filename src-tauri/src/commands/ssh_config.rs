@@ -21,12 +21,14 @@ pub fn write_ssh_config(state: State<'_, AppState>) -> Result<(), MazeSshError> 
 }
 
 #[tauri::command]
-pub fn backup_ssh_config() -> Result<String, MazeSshError> {
+pub fn backup_ssh_config(state: State<'_, AppState>) -> Result<String, MazeSshError> {
+    ensure_unlocked(&state)?;
     config_engine::backup_config()
 }
 
 #[tauri::command]
-pub fn list_config_backups() -> Result<Vec<ConfigBackup>, MazeSshError> {
+pub fn list_config_backups(state: State<'_, AppState>) -> Result<Vec<ConfigBackup>, MazeSshError> {
+    ensure_unlocked(&state)?;
     config_engine::list_backups()
 }
 
@@ -71,6 +73,7 @@ pub fn rollback_ssh_config(
 }
 
 #[tauri::command]
-pub fn read_current_ssh_config() -> Result<String, MazeSshError> {
+pub fn read_current_ssh_config(state: State<'_, AppState>) -> Result<String, MazeSshError> {
+    ensure_unlocked(&state)?;
     config_engine::read_current_config()
 }
