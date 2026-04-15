@@ -523,8 +523,16 @@ fn diagnostic_cmd_to_argv(cmd: &str) -> Vec<String> {
             let path = rm_cmd["rm -f ".len()..].to_string();
             vec!["rm".to_string(), "-f".to_string(), path]
         }
-        _ => {
-            vec!["bash".to_string(), "-c".to_string(), cmd.to_string()]
+        // The nohup command requires shell redirection and backgrounding; run via bash.
+        // This arm is explicit so that the _ fallback can be a hard denial.
+        nohup if nohup.starts_with("nohup ") => {
+            vec!["bash".to_string(), "-c".to_string(), nohup.to_string()]
+        }
+        other => {
+            // validate_diagnostic_cmd should have rejected this already.
+            // Return an empty argv so the caller can detect the bug.
+            eprintln!("[maze-bridge] BUG: diagnostic_cmd_to_argv received unhandled command: {other}");
+            vec![]
         }
     }
 }
@@ -545,6 +553,11 @@ pub fn run_diagnostic_fix(
     validate_diagnostic_cmd(trimmed)?;
 
     let argv = diagnostic_cmd_to_argv(trimmed);
+    if argv.is_empty() {
+        return Err(MazeSshError::BridgeError(
+            "Internal error: command has no argv mapping".to_string(),
+        ));
+    }
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let result = wsl_service::run_in_wsl(&distro, &argv_refs)
         .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
