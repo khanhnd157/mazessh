@@ -15,6 +15,7 @@ export interface SshProfile {
   has_passphrase: boolean;
   created_at: string;
   updated_at: string;
+  vault_key_id?: string | null;
 }
 
 export interface ProfileSummary {
