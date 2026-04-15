@@ -47,6 +47,9 @@ zeroize = { workspace = true }
 base64 = { workspace = true }
 ssh-key = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_Pipes", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Foundation"] }
+
 [features]
 default = ["desktop"]
 desktop = [
