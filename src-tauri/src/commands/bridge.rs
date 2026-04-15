@@ -21,16 +21,30 @@ fn validate_socket_path(path: &str) -> Result<(), MazeSshError> {
     if path.is_empty() {
         return Err(MazeSshError::BridgeError("Socket path cannot be empty".to_string()));
     }
+    // Unix socket paths are limited to ~108 bytes (including null terminator); leave headroom
+    if path.len() > 104 {
+        return Err(MazeSshError::BridgeError(
+            "Socket path too long (max 104 characters)".to_string(),
+        ));
+    }
     if !path.starts_with("/tmp/") && !path.starts_with("/run/user/") {
         return Err(MazeSshError::BridgeError(
             "Socket path must start with /tmp/ or /run/user/".to_string(),
         ));
     }
-    if path.contains(' ') {
-        return Err(MazeSshError::BridgeError("Socket path cannot contain spaces".to_string()));
+    // Strict character allowlist — no shell metacharacters, spaces, or special bytes
+    if !path.bytes().all(|b| matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.')) {
+        return Err(MazeSshError::BridgeError(
+            "Socket path contains invalid characters (allowed: a-z A-Z 0-9 / - _ .)".to_string(),
+        ));
     }
-    if path.contains("..") {
-        return Err(MazeSshError::BridgeError("Socket path cannot contain '..'".to_string()));
+    // Segment-level traversal check — catches '.' and '..' anywhere in the path
+    for segment in path.split('/') {
+        if segment == ".." || segment == "." {
+            return Err(MazeSshError::BridgeError(
+                "Socket path cannot contain '.' or '..' path components".to_string(),
+            ));
+        }
     }
     Ok(())
 }
