@@ -22,8 +22,9 @@ pub fn get_agent_pipe_path() -> String {
 /// Test the agent by listing identities through the named pipe.
 /// Returns the number of keys the agent reports.
 #[tauri::command]
-pub async fn test_agent_connection() -> Result<String, MazeSshError> {
-    use maze_agent_protocol::{encode_message, decode_message, try_read_frame, AgentMessage, AgentResponse};
+pub async fn test_agent_connection(state: State<'_, AppState>) -> Result<String, MazeSshError> {
+    ensure_unlocked(&state)?;
+    use maze_agent_protocol::{decode_message, try_read_frame};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let pipe_path = crate::services::agent_service::PIPE_NAME;
