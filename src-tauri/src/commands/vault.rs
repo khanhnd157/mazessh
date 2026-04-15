@@ -433,6 +433,7 @@ pub fn respond_to_consent(
     allow_mode: String,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
     let mut consents = state
         .pending_consents
         .lock()
@@ -458,6 +459,7 @@ pub fn respond_to_consent(
 pub fn get_pending_consent(
     state: State<'_, AppState>,
 ) -> Result<Option<serde_json::Value>, MazeSshError> {
+    ensure_unlocked(&state)?;
     let consents = state
         .pending_consents
         .lock()
