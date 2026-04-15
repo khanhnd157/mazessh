@@ -38,6 +38,9 @@ async fn run_agent_loop(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use tokio::net::windows::named_pipe::ServerOptions;
 
+    // Limit concurrent connections to prevent resource exhaustion
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(100));
+
     loop {
         // Create a new pipe server instance
         let server = match ServerOptions::new()
@@ -47,7 +50,6 @@ async fn run_agent_loop(
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[maze-agent] failed to create pipe: {e}");
-                // Retry after a delay (pipe might be in use)
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 continue;
             }
@@ -63,9 +65,17 @@ async fn run_agent_loop(
                     continue;
                 }
                 let handle = app_handle.clone();
+                let permit = match semaphore.clone().try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        eprintln!("[maze-agent] max connections reached, rejecting client");
+                        drop(server);
+                        continue;
+                    }
+                };
                 tokio::spawn(async move {
+                    let _permit = permit; // held until task completes
                     if let Err(e) = handle_connection(server, handle).await {
-                        // Client disconnected is normal, only log real errors
                         let msg = e.to_string();
                         if !msg.contains("broken pipe") && !msg.contains("end of file") {
                             eprintln!("[maze-agent] connection error: {e}");
