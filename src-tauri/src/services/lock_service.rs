@@ -2,6 +2,7 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use zeroize::Zeroizing;
 
 use crate::error::MazeSshError;
 
@@ -15,10 +16,13 @@ pub fn set_pin(pin: &str) -> Result<(), MazeSshError> {
         .hash_password(pin.as_bytes(), &salt)
         .map_err(|e| MazeSshError::SecurityError(format!("Failed to hash PIN: {}", e)))?;
 
+    // Wrap the serialized hash in Zeroizing so it is cleared from memory once stored
+    let hash_str = Zeroizing::new(hash.to_string());
+
     let entry = keyring::Entry::new(SERVICE_NAME, PIN_HASH_KEY)
         .map_err(|e| MazeSshError::KeyringError(e.to_string()))?;
     entry
-        .set_password(&hash.to_string())
+        .set_password(&hash_str)
         .map_err(|e| MazeSshError::KeyringError(e.to_string()))?;
 
     Ok(())
@@ -28,8 +32,9 @@ pub fn verify_pin(pin: &str) -> Result<bool, MazeSshError> {
     let entry = keyring::Entry::new(SERVICE_NAME, PIN_HASH_KEY)
         .map_err(|e| MazeSshError::KeyringError(e.to_string()))?;
 
+    // Zeroize the retrieved hash string after use to minimise memory exposure
     let stored_hash = match entry.get_password() {
-        Ok(h) => h,
+        Ok(h) => Zeroizing::new(h),
         Err(keyring::Error::NoEntry) => return Ok(false),
         Err(e) => return Err(MazeSshError::KeyringError(e.to_string())),
     };
