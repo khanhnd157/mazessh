@@ -82,12 +82,28 @@ pub async fn test_agent_connection(state: State<'_, AppState>) -> Result<String,
 #[tauri::command]
 pub fn vault_get_state(state: State<'_, AppState>) -> Result<VaultStateResponse, MazeSshError> {
     let initialized = SshKeyVault::is_initialized(&state.vault_dir);
+
+    // Check if app is locked — if so, only reveal whether vault is initialized
+    let app_locked = state
+        .security
+        .lock()
+        .map(|s| s.is_locked)
+        .unwrap_or(true);
+
+    if app_locked {
+        return Ok(VaultStateResponse {
+            initialized,
+            unlocked: false,
+            key_count: 0,
+        });
+    }
+
     let unlocked = state
         .vault_session
         .lock()
         .map_err(|_| MazeSshError::StateLockError)?
         .is_some();
-    let key_count = if initialized {
+    let key_count = if initialized && unlocked {
         SshKeyVault::list_keys(&state.vault_dir)
             .map(|keys| keys.len())
             .unwrap_or(0)
