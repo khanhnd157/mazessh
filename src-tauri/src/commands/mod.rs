@@ -10,3 +10,4 @@ pub mod scanner;
 pub mod security;
 pub mod ssh_config;
 pub mod switch;
+pub mod vault;

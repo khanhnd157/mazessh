@@ -1,6 +1,9 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 use std::time::Instant;
+
+use maze_vault::VaultSession;
 
 use crate::models::bridge::BridgeConfig;
 use crate::models::profile::SshProfile;
@@ -22,8 +25,13 @@ pub struct AppState {
     pub security: Mutex<SecurityState>,
     pub bridge: RwLock<BridgeConfig>,
     /// Watchdog state: distro_name → per-distro tracking entry.
-    /// Initialized empty; first-poll entries are set without triggering a restart.
     pub relay_watchdog_state: Mutex<HashMap<String, WatchdogEntry>>,
+
+    // ── Vault ────────────────────────────────────────────────────
+    /// The active vault session. None = vault locked / not initialized.
+    pub vault_session: Mutex<Option<VaultSession>>,
+    /// Vault directory path (set once at startup, typically ~/.maze-ssh/vault/)
+    pub vault_dir: PathBuf,
 }
 
 pub struct AppStateInner {
@@ -41,14 +49,17 @@ pub struct SecurityState {
     pub failed_pin_attempts: u32,
     pub last_failed_attempt: Option<Instant>,
     /// Monotonically increasing counter — incremented on every profile activation.
-    /// Background tasks compare their captured value against the current counter
-    /// to detect if a newer activation has superseded them.
     pub activation_counter: u64,
 }
 
 impl AppState {
     #[allow(dead_code)]
     pub fn new() -> Self {
+        let vault_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".maze-ssh")
+            .join("vault");
+
         Self {
             inner: RwLock::new(AppStateInner {
                 profiles: Vec::new(),
@@ -67,6 +78,8 @@ impl AppState {
             }),
             bridge: RwLock::new(BridgeConfig::default()),
             relay_watchdog_state: Mutex::new(HashMap::new()),
+            vault_session: Mutex::new(None),
+            vault_dir,
         }
     }
 
@@ -78,6 +91,11 @@ impl AppState {
         pin_is_set: bool,
         bridge_config: BridgeConfig,
     ) -> Self {
+        let vault_dir = dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".maze-ssh")
+            .join("vault");
+
         Self {
             inner: RwLock::new(AppStateInner {
                 profiles,
@@ -85,7 +103,7 @@ impl AppState {
                 repo_mappings,
             }),
             security: Mutex::new(SecurityState {
-                is_locked: pin_is_set, // Start locked if PIN is configured
+                is_locked: pin_is_set,
                 pin_is_set,
                 last_activity: Instant::now(),
                 agent_activated_at: None,
@@ -96,6 +114,8 @@ impl AppState {
             }),
             bridge: RwLock::new(bridge_config),
             relay_watchdog_state: Mutex::new(HashMap::new()),
+            vault_session: Mutex::new(None),
+            vault_dir,
         }
     }
 }
