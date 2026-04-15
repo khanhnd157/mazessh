@@ -32,6 +32,12 @@ pub fn append_log(entry: &AuditEntry) {
     }
 
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+        // Restrict audit log to owner-only on Unix (prevent other local users from reading it)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        }
         if let Ok(line) = serde_json::to_string(entry) {
             let _ = writeln!(file, "{}", line);
         }
