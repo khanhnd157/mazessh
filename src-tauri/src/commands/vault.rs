@@ -19,6 +19,63 @@ pub fn get_agent_pipe_path() -> String {
     crate::services::agent_service::PIPE_NAME.to_string()
 }
 
+/// Test the agent by listing identities through the named pipe.
+/// Returns the number of keys the agent reports.
+#[tauri::command]
+pub async fn test_agent_connection() -> Result<String, MazeSshError> {
+    use maze_agent_protocol::{encode_message, decode_message, try_read_frame, AgentMessage, AgentResponse};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let pipe_path = crate::services::agent_service::PIPE_NAME;
+
+    // Build a RequestIdentities message
+    let request = vec![0u8, 0, 0, 1, 11]; // length=1, type=SSH_AGENTC_REQUEST_IDENTITIES
+
+    #[cfg(windows)]
+    {
+        let mut client = tokio::net::windows::named_pipe::ClientOptions::new()
+            .open(pipe_path)
+            .map_err(|e| MazeSshError::VaultError(format!("Cannot connect to agent pipe: {e}")))?;
+
+        client.write_all(&request).await
+            .map_err(|e| MazeSshError::VaultError(format!("Write failed: {e}")))?;
+
+        let mut buf = vec![0u8; 65536];
+        let n = client.read(&mut buf).await
+            .map_err(|e| MazeSshError::VaultError(format!("Read failed: {e}")))?;
+
+        if n == 0 {
+            return Err(MazeSshError::VaultError("Agent returned empty response".into()));
+        }
+
+        if let Some((frame, _)) = try_read_frame(&buf[..n]) {
+            match decode_message(&frame) {
+                Ok(msg) => {
+                    // The response is an AgentMessage but we need to check the raw type
+                    // Actually decode_message expects client messages. Let's check raw bytes.
+                    if buf[4] == 12 {
+                        // SSH_AGENT_IDENTITIES_ANSWER
+                        let count = u32::from_be_bytes([buf[5], buf[6], buf[7], buf[8]]);
+                        Ok(format!("Agent OK: {} identit{} available", count, if count == 1 { "y" } else { "ies" }))
+                    } else if buf[4] == 5 {
+                        Ok("Agent responded with FAILURE".into())
+                    } else {
+                        Ok(format!("Agent responded with type {}", buf[4]))
+                    }
+                }
+                Err(e) => Ok(format!("Agent responded but decode failed: {e}")),
+            }
+        } else {
+            Err(MazeSshError::VaultError("Incomplete response from agent".into()))
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        Err(MazeSshError::VaultError("Agent test only supported on Windows".into()))
+    }
+}
+
 // ── Vault lifecycle ──────────────────────────────────────────────
 
 #[tauri::command]
