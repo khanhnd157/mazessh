@@ -261,6 +261,7 @@ pub fn run() {
             commands::bridge::remove_windows_ssh_host,
             // Vault
             commands::vault::get_agent_pipe_path,
+            commands::vault::test_agent_connection,
             commands::vault::vault_get_state,
             commands::vault::vault_init,
             commands::vault::vault_unlock,

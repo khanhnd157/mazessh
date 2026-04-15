@@ -249,6 +249,7 @@ export const commands = {
 
   // ── Agent ──
   getAgentPipePath: () => invoke<string>("get_agent_pipe_path"),
+  testAgentConnection: () => invoke<string>("test_agent_connection"),
 
   // ── Consent ──
   respondToConsent: (consentId: string, approved: boolean, selectedKeyId: string, allowMode: string) =>

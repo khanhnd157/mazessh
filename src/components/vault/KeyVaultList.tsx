@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, KeyRound, Search, Radio } from "lucide-react";
+import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
 import { useVaultStore } from "@/stores/vaultStore";
 import { VaultSetupPrompt } from "./VaultSetupPrompt";
@@ -9,7 +10,8 @@ import { ImportKeyDialog } from "./ImportKeyDialog";
 import { KeyDetailSheet } from "./KeyDetailSheet";
 import { MigrationWizard } from "@/components/migration/MigrationWizard";
 import { VaultPassphraseChange } from "./VaultPassphraseChange";
-import type { KeyState, SshKeyItemSummary } from "@/types";
+import { KeyCard } from "./KeyCard";
+import type { KeyState } from "@/types";
 
 export function KeyVaultList() {
   const { vaultState, keys, keysLoading, selectedKeyId, selectedKey, fetchKeys, selectKey } = useVaultStore();
@@ -110,7 +112,21 @@ export function KeyVaultList() {
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-success/5 border border-success/15">
           <Radio size={12} className="text-success animate-pulse" />
           <span className="text-[11px] text-success font-medium">Agent running</span>
-          <span className="text-[10px] text-muted-foreground/50 font-mono">{agentPipe}</span>
+          <span className="text-[10px] text-muted-foreground/50 font-mono flex-1">{agentPipe}</span>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const result = await commands.testAgentConnection();
+                toast.success("Agent Test", { description: result });
+              } catch (e) {
+                toast.error("Agent Test Failed", { description: String(e) });
+              }
+            }}
+            className="text-[10px] px-2 py-0.5 rounded bg-success/15 text-success font-medium hover:bg-success/25 transition-colors"
+          >
+            Test
+          </button>
         </div>
       )}
 
@@ -172,39 +188,5 @@ export function KeyVaultList() {
         <KeyDetailSheet keyItem={selectedKey} onClose={() => selectKey(null)} />
       )}
     </div>
-  );
-}
-
-function KeyCard({ item, selected, onClick }: { item: SshKeyItemSummary; selected: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full text-left rounded-lg p-3 transition-all duration-100 border ${
-        selected
-          ? "bg-primary/8 border-primary/25 ring-1 ring-primary/20"
-          : "bg-secondary/50 border-border hover:bg-accent/50"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 mb-1">
-            <span className="font-medium text-[12.5px] truncate">{item.name}</span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium shrink-0">
-              {item.algorithm === "ed25519" ? "Ed25519" : "RSA"}
-            </span>
-          </div>
-          <div className="font-mono text-[10.5px] text-muted-foreground/60 truncate">
-            {item.fingerprint}
-          </div>
-        </div>
-        <div className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
-          item.state === "active" ? "bg-success" : "bg-muted-foreground/30"
-        }`} />
-      </div>
-      <div className="text-[10px] text-muted-foreground/40 mt-2">
-        Created {new Date(item.created_at).toLocaleDateString()}
-      </div>
-    </button>
   );
 }
