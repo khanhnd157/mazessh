@@ -176,6 +176,14 @@ input, select, textarea {
   animation: fade-in 0.2s ease-out;
 }
 
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
+}
+
 /* ─── Toast overrides ─── */
 [data-sonner-toaster] {
   --normal-bg: var(--color-card) !important;

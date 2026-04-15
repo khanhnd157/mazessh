@@ -9,7 +9,7 @@ pub mod state;
 use std::time::Duration;
 
 #[cfg(feature = "desktop")]
-use services::{bridge_service, lock_service, profile_service, repo_mapping_service, session_service, settings_service};
+use services::{agent_service, bridge_service, lock_service, profile_service, repo_mapping_service, session_service, settings_service};
 #[cfg(feature = "desktop")]
 use state::AppState;
 #[cfg(feature = "desktop")]
@@ -117,6 +117,16 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+
+            // Ensure vault directory exists
+            {
+                let state = app.state::<AppState>();
+                let vault_dir = state.vault_dir.clone();
+                let _ = std::fs::create_dir_all(vault_dir.join("keys"));
+            }
+
+            // Start SSH agent daemon on named pipe
+            agent_service::start_agent_daemon(app.handle().clone());
 
             // Start background security timer (15s interval)
             let timer_handle = app.handle().clone();
@@ -249,6 +259,31 @@ pub fn run() {
             commands::bridge::preview_windows_ssh_host,
             commands::bridge::upsert_windows_ssh_host,
             commands::bridge::remove_windows_ssh_host,
+            // Vault
+            commands::vault::get_agent_pipe_path,
+            commands::vault::test_agent_connection,
+            commands::vault::vault_get_state,
+            commands::vault::vault_init,
+            commands::vault::vault_unlock,
+            commands::vault::vault_lock,
+            commands::vault::vault_change_passphrase,
+            commands::vault::vault_generate_key,
+            commands::vault::vault_import_key,
+            commands::vault::vault_list_keys,
+            commands::vault::vault_get_key,
+            commands::vault::vault_update_key,
+            commands::vault::vault_delete_key,
+            commands::vault::vault_archive_key,
+            commands::vault::vault_export_public_key,
+            commands::vault::vault_export_private_key,
+            commands::vault::get_migration_preview,
+            commands::vault::migrate_profiles_to_vault,
+            commands::vault::delete_original_key_file,
+            commands::vault::respond_to_consent,
+            commands::vault::get_pending_consent,
+            commands::vault::list_policy_rules,
+            commands::vault::delete_policy_rule,
+            commands::vault::clear_all_policy_rules,
             // Tray
             update_tray_tooltip,
         ])

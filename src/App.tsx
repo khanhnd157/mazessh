@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "sonner";
-import { KeyRound, FileCode2, FolderGit2, Monitor, Settings } from "lucide-react";
+import { KeyRound, FileCode2, FolderGit2, Monitor, Settings, Shield } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLogStore } from "@/stores/logStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { useSecurityStore } from "@/stores/securityStore";
+import { useVaultStore } from "@/stores/vaultStore";
 import { useUiStore } from "@/stores/uiStore";
 import { useInactivityTracker } from "@/hooks/useInactivityTracker";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -20,6 +21,7 @@ import { RepoMappingList } from "@/components/repos/RepoMappingList";
 import { LockScreen } from "@/components/security/LockScreen";
 import { SecuritySettingsPanel } from "@/components/settings/SecuritySettings";
 import { WslBridgePanel } from "@/components/settings/WslBridgeSettings";
+import { KeyVaultList } from "@/components/vault/KeyVaultList";
 import type { AgentStatusEvent } from "@/types";
 
 function App() {
@@ -40,6 +42,7 @@ function App() {
 
     useSecurityStore.getState().fetchLockState();
     useSecurityStore.getState().fetchSettings();
+    useVaultStore.getState().fetchVaultState();
   }, []);
 
   // Fetch data once unlocked
@@ -48,6 +51,7 @@ function App() {
       useProfileStore.getState().fetchProfiles();
       useAppStore.getState().fetchActiveProfile();
       useAppStore.getState().fetchGitIdentity();
+      useVaultStore.getState().fetchVaultState();
     }
   }, [isLocked, initialized]);
 
@@ -82,10 +86,25 @@ function App() {
       useAppStore.getState().fetchActiveProfile();
     });
 
+    const unlistenVaultState = listen<{ initialized: boolean; unlocked: boolean; key_count: number }>("vault-state-changed", (event) => {
+      useVaultStore.getState().setVaultState(event.payload);
+      if (event.payload.unlocked) {
+        useVaultStore.getState().fetchKeys();
+      }
+    });
+
+    const unlistenConsent = listen<{ consent_id: string; key_name: string; process_name: string }>("consent-request", (event) => {
+      toast.info("SSH signing request", {
+        description: `${event.payload.process_name} wants to use "${event.payload.key_name}"`,
+      });
+    });
+
     return () => {
       unlistenAgent.then((fn) => fn());
       unlistenLock.then((fn) => fn());
       unlistenExpiry.then((fn) => fn());
+      unlistenVaultState.then((fn) => fn());
+      unlistenConsent.then((fn) => fn());
     };
   }, []);
 
@@ -111,6 +130,12 @@ function App() {
               label="Profiles"
               active={activeTab === "profiles"}
               onClick={() => setActiveTab("profiles")}
+            />
+            <TabButton
+              icon={<Shield size={14} />}
+              label="Key Vault"
+              active={activeTab === "vault"}
+              onClick={() => setActiveTab("vault")}
             />
             <TabButton
               icon={<FolderGit2 size={14} />}
@@ -141,6 +166,9 @@ function App() {
           <div className="flex-1 min-h-0 overflow-hidden relative">
             <TabPanel active={activeTab === "profiles"}>
               <MainPanel />
+            </TabPanel>
+            <TabPanel active={activeTab === "vault"} scrollable>
+              <KeyVaultList />
             </TabPanel>
             <TabPanel active={activeTab === "repos"} scrollable>
               <RepoMappingList />

@@ -32,6 +32,12 @@ pub fn append_log(entry: &AuditEntry) {
     }
 
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
+        // Restrict audit log to owner-only on Unix (prevent other local users from reading it)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        }
         if let Ok(line) = serde_json::to_string(entry) {
             let _ = writeln!(file, "{}", line);
         }
@@ -47,6 +53,17 @@ fn rotate_log(path: &std::path::Path) -> Result<(), std::io::Error> {
     }
     fs::rename(path, &rotated)?;
     Ok(())
+}
+
+/// Convenience wrapper for vault/key operations
+pub fn log_action(action: &str, key_name: Option<&str>, result: &str) {
+    append_log(&AuditEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        action: action.to_string(),
+        profile_name: key_name.map(String::from),
+        result: result.to_string(),
+        ..Default::default()
+    });
 }
 
 pub fn read_logs(
