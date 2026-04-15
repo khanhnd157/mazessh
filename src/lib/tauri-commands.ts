@@ -15,11 +15,15 @@ import type {
   DetectedKey,
   DiagnosticsResult,
   DistroBridgeStatus,
+  GenerateKeyRequest,
   GitConfigScope,
   GitIdentityInfo,
+  ImportKeyRequest,
   KeyFingerprint,
   KeyHealthReport,
   LockStateResponse,
+  MigrationPreview,
+  MigrationReport,
   NamedPipeEntry,
   ProfileSummary,
   ProviderStatus,
@@ -29,8 +33,12 @@ import type {
   SecuritySettings,
   ShellInjection,
   SshHostTestResult,
+  SshKeyItem,
+  SshKeyItemSummary,
   SshProfile,
+  UpdateKeyRequest,
   UpdateProfileInput,
+  VaultStateResponse,
   WslDistro,
 } from "@/types";
 
@@ -211,4 +219,31 @@ export const commands = {
     invoke<void>("upsert_windows_ssh_host", { distro }),
   removeWindowsSshHost: (distro: string) =>
     invoke<void>("remove_windows_ssh_host", { distro }),
+
+  // ── Vault ──
+  vaultGetState: () => invoke<VaultStateResponse>("vault_get_state"),
+  vaultInit: (passphrase: string) => invoke<void>("vault_init", { passphrase }),
+  vaultUnlock: (passphrase: string) => invoke<void>("vault_unlock", { passphrase }),
+  vaultLock: () => invoke<void>("vault_lock"),
+  vaultChangePassphrase: (oldPassphrase: string, newPassphrase: string) =>
+    invoke<void>("vault_change_passphrase", { oldPassphrase, newPassphrase }),
+  vaultGenerateKey: (request: GenerateKeyRequest) =>
+    invoke<SshKeyItem>("vault_generate_key", { request }),
+  vaultImportKey: (request: ImportKeyRequest) =>
+    invoke<SshKeyItem>("vault_import_key", { request }),
+  vaultListKeys: () => invoke<SshKeyItemSummary[]>("vault_list_keys"),
+  vaultGetKey: (id: string) => invoke<SshKeyItem>("vault_get_key", { id }),
+  vaultUpdateKey: (id: string, request: UpdateKeyRequest) =>
+    invoke<SshKeyItem>("vault_update_key", { id, request }),
+  vaultDeleteKey: (id: string) => invoke<void>("vault_delete_key", { id }),
+  vaultArchiveKey: (id: string) => invoke<void>("vault_archive_key", { id }),
+  vaultExportPublicKey: (id: string) => invoke<string>("vault_export_public_key", { id }),
+  vaultExportPrivateKey: (id: string) => invoke<string>("vault_export_private_key", { id }),
+
+  // ── Migration ──
+  getMigrationPreview: () => invoke<MigrationPreview>("get_migration_preview"),
+  migrateProfilesToVault: (profileIds: string[]) =>
+    invoke<MigrationReport>("migrate_profiles_to_vault", { profileIds }),
+  deleteOriginalKeyFile: (keyPath: string) =>
+    invoke<void>("delete_original_key_file", { keyPath }),
 };

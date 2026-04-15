@@ -271,6 +271,9 @@ pub fn run() {
             commands::vault::vault_archive_key,
             commands::vault::vault_export_public_key,
             commands::vault::vault_export_private_key,
+            commands::vault::get_migration_preview,
+            commands::vault::migrate_profiles_to_vault,
+            commands::vault::delete_original_key_file,
             // Tray
             update_tray_tooltip,
         ])

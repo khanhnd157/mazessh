@@ -6,6 +6,7 @@ import { useSecurityStore } from "@/stores/securityStore";
 import { useProfileStore } from "@/stores/profileStore";
 import type { SecuritySettings as SecuritySettingsType, KeyHealthReport } from "@/types";
 import { AuditLogViewer } from "./AuditLogViewer";
+import { AgentModeSettings } from "./AgentModeSettings";
 
 const TIMEOUT_OPTIONS = [
   { value: null, label: "Disabled" },
@@ -291,6 +292,20 @@ export function SecuritySettingsPanel() {
           </select>
         </div>
       </div>
+
+      {/* Section: Agent Mode */}
+      {settings && (
+        <div className="rounded-xl border bg-card p-4">
+          <AgentModeSettings settings={settings} onUpdate={async (s) => {
+            try {
+              await updateSettings(s);
+              toast.success("Settings updated");
+            } catch (err) {
+              toast.error("Failed to update settings", { description: String(err) });
+            }
+          }} />
+        </div>
+      )}
 
       {/* Section 4: Export / Import */}
       <div className="rounded-xl border bg-card p-4 space-y-3">
