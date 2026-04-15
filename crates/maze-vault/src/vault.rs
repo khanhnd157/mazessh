@@ -79,14 +79,15 @@ impl SshKeyVault {
 
         // Decrypt VEK with old passphrase
         let old_vmk = derive_vmk(old_passphrase, &meta.kdf_params)?;
-        let vek = decrypt_vek(&old_vmk, &meta.encrypted_vek)?;
+        let mut vek = decrypt_vek(&old_vmk, &meta.encrypted_vek)?;
 
         // New KDF params with fresh salt
         let new_kdf_params = KdfParams::default();
         let new_vmk = derive_vmk(new_passphrase, &new_kdf_params)?;
 
-        // Re-encrypt VEK under new VMK
+        // Re-encrypt VEK under new VMK, then zeroize the plaintext VEK bytes
         let new_encrypted_vek = maze_crypto::encrypt(&vek, new_vmk.as_bytes())?;
+        vek.zeroize();
 
         meta.kdf_params = new_kdf_params;
         meta.encrypted_vek = new_encrypted_vek;
