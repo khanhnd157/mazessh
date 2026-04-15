@@ -1,13 +1,18 @@
+import { useCallback, useState } from "react";
 import { Plus, KeyRound } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
 import { useUiStore } from "@/stores/uiStore";
 import { ProfileCard } from "./ProfileCard";
-import { useState } from "react";
 import { ProfileForm } from "./ProfileForm";
 
 export function ProfileList() {
   const { profiles, selectedProfileId, selectProfile, loading } = useProfileStore();
   const [showForm, setShowForm] = useState(false);
+
+  const handleSelect = useCallback((id: string) => {
+    selectProfile(id);
+    useUiStore.getState().setActiveTab("profiles");
+  }, [selectProfile]);
 
   return (
     <div className="flex flex-col h-full">
@@ -54,10 +59,7 @@ export function ProfileList() {
             key={profile.id}
             profile={profile}
             isSelected={selectedProfileId === profile.id}
-            onClick={() => {
-              selectProfile(profile.id);
-              useUiStore.getState().setActiveTab("profiles");
-            }}
+            onSelect={handleSelect}
           />
         ))}
       </div>

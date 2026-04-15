@@ -18,11 +18,15 @@ import type { ProfileSummary } from "@/types";
 
 export function TitleBar() {
   const [maximized, setMaximized] = useState(false);
-  const { theme, toggleTheme } = useThemeStore();
-  const { activeProfile, deactivateProfile } = useAppStore();
-  const { profiles, fetchProfiles } = useProfileStore();
-  const { pinIsSet, lockApp } = useSecurityStore();
-  const { addLog } = useLogStore();
+  const theme = useThemeStore((s) => s.theme);
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
+  const activeProfile = useAppStore((s) => s.activeProfile);
+  const deactivateProfile = useAppStore((s) => s.deactivateProfile);
+  const profiles = useProfileStore((s) => s.profiles);
+  const fetchProfiles = useProfileStore((s) => s.fetchProfiles);
+  const pinIsSet = useSecurityStore((s) => s.pinIsSet);
+  const lockApp = useSecurityStore((s) => s.lockApp);
+  const addLog = useLogStore((s) => s.addLog);
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
@@ -157,9 +161,11 @@ function SwitchDropdown() {
   const [switching, setSwitching] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { activateProfile, activeProfile } = useAppStore();
-  const { profiles, fetchProfiles } = useProfileStore();
-  const { addLog } = useLogStore();
+  const activateProfile = useAppStore((s) => s.activateProfile);
+  const activeProfile = useAppStore((s) => s.activeProfile);
+  const profiles = useProfileStore((s) => s.profiles);
+  const fetchProfiles = useProfileStore((s) => s.fetchProfiles);
+  const addLog = useLogStore((s) => s.addLog);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, KeyRound, Search, Radio, X } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
@@ -39,14 +39,14 @@ export function KeyVaultList() {
     return <VaultUnlockPrompt />;
   }
 
-  const filtered = keys.filter((k) => {
-    if (filterState !== "all" && k.state !== filterState) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return k.name.toLowerCase().includes(q) || k.fingerprint.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return keys.filter((k) => {
+      if (filterState !== "all" && k.state !== filterState) return false;
+      if (q) return k.name.toLowerCase().includes(q) || k.fingerprint.toLowerCase().includes(q);
+      return true;
+    });
+  }, [keys, filterState, search]);
 
   return (
     <div className="space-y-4">

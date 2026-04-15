@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { SshKeyItemSummary } from "@/types";
 
 interface Props {
@@ -6,7 +7,12 @@ interface Props {
   onClick: () => void;
 }
 
-export function KeyCard({ item, selected, onClick }: Props) {
+function formatCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  return `Created ${Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString()}`;
+}
+
+export const KeyCard = memo(function KeyCard({ item, selected, onClick }: Props) {
   return (
     <button
       type="button"
@@ -43,11 +49,8 @@ export function KeyCard({ item, selected, onClick }: Props) {
         }`} />
       </div>
       <div className="text-[10px] text-muted-foreground/40 mt-2">
-        {(() => {
-          const d = new Date(item.created_at);
-          return `Created ${Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString()}`;
-        })()}
+        {formatCreatedAt(item.created_at)}
       </div>
     </button>
   );
-}
+});

@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import { FolderGit2, Trash2, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
@@ -13,7 +14,7 @@ interface RepoMappingCardProps {
   mapping: RepoMappingSummary;
 }
 
-export function RepoMappingCard({ mapping }: RepoMappingCardProps) {
+export const RepoMappingCard = memo(function RepoMappingCard({ mapping }: RepoMappingCardProps) {
   const { deleteMapping } = useRepoMappingStore();
   const { profiles } = useProfileStore();
   const { addLog } = useLogStore();
@@ -21,7 +22,17 @@ export function RepoMappingCard({ mapping }: RepoMappingCardProps) {
 
   const profile = profiles.find((p) => p.id === mapping.profile_id);
 
-  const handleDelete = async () => {
+  const handleInstallHook = useCallback(async () => {
+    try {
+      const path = await commands.generateGitHook(mapping.repo_path);
+      addLog({ action: "hook", detail: `Pre-push hook installed: ${path}`, level: "info" });
+      toast.success("Git hook installed", { description: "pre-push identity validation" });
+    } catch (err) {
+      toast.error("Hook failed", { description: String(err) });
+    }
+  }, [mapping.repo_path, addLog]);
+
+  const handleDelete = useCallback(async () => {
     const ok = await confirm({
       title: `Remove mapping?`,
       description: `This will unlink "${mapping.repo_name}" from its profile. The repository and profile will not be affected.`,
@@ -36,7 +47,8 @@ export function RepoMappingCard({ mapping }: RepoMappingCardProps) {
     } catch (err) {
       toast.error("Failed to remove mapping", { description: String(err) });
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapping.id, mapping.repo_name, deleteMapping, addLog]);
 
   return (
     <>
@@ -70,15 +82,7 @@ export function RepoMappingCard({ mapping }: RepoMappingCardProps) {
           )}
           <button
             type="button"
-            onClick={async () => {
-              try {
-                const path = await commands.generateGitHook(mapping.repo_path);
-                addLog({ action: "hook", detail: `Pre-push hook installed: ${path}`, level: "info" });
-                toast.success("Git hook installed", { description: "pre-push identity validation" });
-              } catch (err) {
-                toast.error("Hook failed", { description: String(err) });
-              }
-            }}
+            onClick={handleInstallHook}
             title="Install pre-push hook"
             className="p-1.5 rounded-md text-muted-foreground/40 hover:text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-all"
           >
@@ -97,4 +101,4 @@ export function RepoMappingCard({ mapping }: RepoMappingCardProps) {
       <ConfirmDialog {...confirmProps} />
     </>
   );
-}
+});
