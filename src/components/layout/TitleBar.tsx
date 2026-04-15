@@ -24,6 +24,8 @@ export function TitleBar() {
   const deactivateProfile = useAppStore((s) => s.deactivateProfile);
   const profiles = useProfileStore((s) => s.profiles);
   const fetchProfiles = useProfileStore((s) => s.fetchProfiles);
+  const selectedProfileId = useProfileStore((s) => s.selectedProfileId);
+  const canDeactivate = !!activeProfile && selectedProfileId === activeProfile.id;
   const pinIsSet = useSecurityStore((s) => s.pinIsSet);
   const lockApp = useSecurityStore((s) => s.lockApp);
   const addLog = useLogStore((s) => s.addLog);
@@ -88,17 +90,16 @@ export function TitleBar() {
       {/* Center: Switch + Deactivate */}
       <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
         {profiles.length > 0 && <SwitchDropdown />}
-        {activeProfile && (
-          <button
-            type="button"
-            onClick={handleDeactivate}
-            title="Deactivate profile"
-            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/60 text-muted-foreground/60 hover:text-foreground hover:bg-foreground/5 hover:border-border transition-colors"
-          >
-            <Power size={11} />
-            <span className="hidden sm:inline">Deactivate</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleDeactivate}
+          disabled={!canDeactivate}
+          title={canDeactivate ? "Deactivate profile" : "Select the active profile to deactivate"}
+          className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/60 text-muted-foreground/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed hover:enabled:text-foreground hover:enabled:bg-foreground/5 hover:enabled:border-border"
+        >
+          <Power size={11} />
+          <span className="hidden sm:inline">Deactivate</span>
+        </button>
       </div>
 
       {/* Right: Theme + Window controls */}
