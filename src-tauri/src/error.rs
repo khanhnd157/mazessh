@@ -50,6 +50,15 @@ pub enum MazeSshError {
 
     #[error("Validation error: {0}")]
     ValidationError(String),
+
+    #[error("WSL not available: {0}")]
+    WslNotAvailable(String),
+
+    #[error("WSL command failed: {0}")]
+    WslCommandFailed(String),
+
+    #[error("Bridge error: {0}")]
+    BridgeError(String),
 }
 
 impl Serialize for MazeSshError {

@@ -44,6 +44,7 @@ pub fn check_inactivity_and_lock(app: &tauri::AppHandle) {
             action: "auto_lock".to_string(),
             profile_name: None,
             result: format!("Locked after {} minutes of inactivity", timeout_minutes),
+            ..Default::default()
         });
     }
 }
@@ -91,6 +92,7 @@ pub fn check_agent_expiry(app: &tauri::AppHandle) {
             action: "agent_expired".to_string(),
             profile_name: None,
             result: format!("Keys cleared after {} minutes", timeout_minutes),
+            ..Default::default()
         });
     }
 }

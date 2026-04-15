@@ -8,12 +8,14 @@ use crate::services::git_identity_service;
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn get_current_git_identity() -> Result<GitIdentityInfo, MazeSshError> {
+pub fn get_current_git_identity(state: State<'_, AppState>) -> Result<GitIdentityInfo, MazeSshError> {
+    ensure_unlocked(&state)?;
     git_identity_service::get_git_identity_global()
 }
 
 #[tauri::command]
-pub fn get_repo_git_identity(repo_path: String) -> Result<GitIdentityInfo, MazeSshError> {
+pub fn get_repo_git_identity(repo_path: String, state: State<'_, AppState>) -> Result<GitIdentityInfo, MazeSshError> {
+    ensure_unlocked(&state)?;
     git_identity_service::get_git_identity_local(&PathBuf::from(repo_path))
 }
 

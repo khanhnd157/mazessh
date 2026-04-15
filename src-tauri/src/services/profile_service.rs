@@ -4,17 +4,18 @@ use std::path::PathBuf;
 use crate::error::MazeSshError;
 use crate::models::profile::SshProfile;
 
-fn data_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not find home directory");
-    home.join(".maze-ssh")
+pub fn data_dir() -> Result<PathBuf, MazeSshError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?;
+    Ok(home.join(".maze-ssh"))
 }
 
-fn profiles_path() -> PathBuf {
-    data_dir().join("profiles.json")
+fn profiles_path() -> Result<PathBuf, MazeSshError> {
+    Ok(data_dir()?.join("profiles.json"))
 }
 
 pub fn ensure_data_dir() -> Result<(), MazeSshError> {
-    let dir = data_dir();
+    let dir = data_dir()?;
     if !dir.exists() {
         fs::create_dir_all(&dir)?;
     }
@@ -22,7 +23,7 @@ pub fn ensure_data_dir() -> Result<(), MazeSshError> {
 }
 
 pub fn load_profiles() -> Result<Vec<SshProfile>, MazeSshError> {
-    let path = profiles_path();
+    let path = profiles_path()?;
     if !path.exists() {
         return Ok(Vec::new());
     }
@@ -34,21 +35,27 @@ pub fn load_profiles() -> Result<Vec<SshProfile>, MazeSshError> {
 pub fn save_profiles(profiles: &[SshProfile]) -> Result<(), MazeSshError> {
     ensure_data_dir()?;
     let content = serde_json::to_string_pretty(profiles)?;
-    atomic_write(&profiles_path(), &content)?;
+    atomic_write(&profiles_path()?, &content)?;
     Ok(())
 }
 
 /// Write content to a file atomically: write to a temp file, then rename.
 /// This prevents corruption if the process crashes mid-write.
+/// On Unix, sets file permissions to 0600 (owner read/write only).
 pub fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), std::io::Error> {
     let tmp_path = path.with_extension("tmp");
     fs::write(&tmp_path, content)?;
     fs::rename(&tmp_path, path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
     Ok(())
 }
 
 pub fn load_active_profile_id() -> Result<Option<String>, MazeSshError> {
-    let path = data_dir().join("active.txt");
+    let path = data_dir()?.join("active.txt");
     if !path.exists() {
         return Ok(None);
     }
@@ -62,7 +69,7 @@ pub fn load_active_profile_id() -> Result<Option<String>, MazeSshError> {
 
 pub fn save_active_profile_id(id: Option<&str>) -> Result<(), MazeSshError> {
     ensure_data_dir()?;
-    let path = data_dir().join("active.txt");
+    let path = data_dir()?.join("active.txt");
     match id {
         Some(id) => fs::write(&path, id)?,
         None => {

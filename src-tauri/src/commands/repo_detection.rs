@@ -1,17 +1,18 @@
 use std::path::PathBuf;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::commands::security::ensure_unlocked;
 use crate::commands::switch::ActivationResult;
 use crate::error::MazeSshError;
 use crate::models::repo_mapping::{GitConfigScope, RepoMappingSummary};
 use crate::services::{
-    git_identity_service, profile_service, repo_detection_service, ssh_engine,
+    git_identity_service, profile_service, repo_detection_service, security as security_service, ssh_engine,
 };
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn resolve_repo_path(path: String) -> Result<Option<String>, MazeSshError> {
+pub fn resolve_repo_path(path: String, state: State<'_, AppState>) -> Result<Option<String>, MazeSshError> {
+    ensure_unlocked(&state)?;
     let p = PathBuf::from(&path);
     Ok(repo_detection_service::find_git_root(&p)
         .map(|r| r.to_string_lossy().to_string()))
@@ -62,8 +63,15 @@ pub async fn auto_switch_for_repo(
     ensure_unlocked(&state)?;
     let p = PathBuf::from(&path);
 
+    // Increment activation counter to detect race with concurrent activations
+    let our_seq = {
+        let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
+        security.activation_counter = security.activation_counter.wrapping_add(1);
+        security.activation_counter
+    };
+
     // Extract everything we need from state
-    let (profile, mapping_scope, git_root, key_path) = {
+    let (profile, mapping_scope, git_root, key_path, profile_id) = {
         let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
 
         let git_root = match repo_detection_service::find_git_root(&p) {
@@ -83,7 +91,8 @@ pub async fn auto_switch_for_repo(
         };
 
         let key_path = profile.private_key_path.to_string_lossy().to_string();
-        (profile, mapping.git_config_scope, git_root, key_path)
+        let profile_id = profile.id.clone();
+        (profile, mapping.git_config_scope, git_root, key_path, profile_id)
     };
 
     // Activate the profile (same as manual activation)
@@ -101,7 +110,17 @@ pub async fn auto_switch_for_repo(
     // Background: agent + env var + git identity sync
     let profile_bg = profile.clone();
     let git_root_bg = git_root.clone();
+    let app_bg = app.clone();
     tokio::task::spawn_blocking(move || {
+        // Bail out if a newer activation has superseded this one
+        let still_latest = app_bg.state::<AppState>()
+            .security.lock()
+            .map(|s| s.activation_counter == our_seq)
+            .unwrap_or(false);
+        if !still_latest {
+            return;
+        }
+
         let mut status_parts: Vec<String> = Vec::new();
 
         // Set env var
@@ -111,8 +130,13 @@ pub async fn auto_switch_for_repo(
         }
 
         // SSH agent
+        let passphrase = if profile_bg.has_passphrase {
+            security_service::get_passphrase(&profile_id).ok().flatten()
+        } else {
+            None
+        };
         match ssh_engine::ensure_agent_running() {
-            Ok(true) => match ssh_engine::agent_switch_key(&key_path) {
+            Ok(true) => match ssh_engine::agent_switch_key(&key_path, passphrase.as_deref()) {
                 Ok(_) => status_parts.push("Key loaded into ssh-agent".to_string()),
                 Err(e) => status_parts.push(format!("ssh-add failed: {}", e)),
             },
@@ -152,7 +176,7 @@ pub async fn auto_switch_for_repo(
         let success = status_parts.iter().any(|s| s.contains("loaded"));
         let status = status_parts.join(" | ");
 
-        let _ = app.emit(
+        let _ = app_bg.emit(
             "agent-status",
             crate::commands::switch::AgentStatusEvent {
                 status,

@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { Shield, Lock, Clock, KeyRound, AlertCircle, Check, Download, Upload } from "lucide-react";
+import { Shield, Lock, Clock, KeyRound, AlertCircle, Check, Download, Upload, HeartPulse } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
 import { useSecurityStore } from "@/stores/securityStore";
 import { useProfileStore } from "@/stores/profileStore";
-import type { SecuritySettings as SecuritySettingsType } from "@/types";
+import type { SecuritySettings as SecuritySettingsType, KeyHealthReport } from "@/types";
 import { AuditLogViewer } from "./AuditLogViewer";
 
 const TIMEOUT_OPTIONS = [
@@ -338,7 +338,10 @@ export function SecuritySettingsPanel() {
         </div>
       </div>
 
-      {/* Section 5: Audit Log */}
+      {/* Section 5: Key Health Check */}
+      <KeyHealthSection />
+
+      {/* Section 6: Audit Log */}
       <div className="rounded-xl border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -357,6 +360,105 @@ export function SecuritySettingsPanel() {
           All security-sensitive actions are logged for review.
         </p>
       </div>
+    </div>
+  );
+}
+
+function KeyHealthSection() {
+  const [reports, setReports] = useState<KeyHealthReport[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [ran, setRan] = useState(false);
+
+  const runCheck = async () => {
+    setLoading(true);
+    try {
+      const result = await commands.checkAllKeysHealth();
+      setReports(result);
+      setRan(true);
+    } catch (err) {
+      toast.error("Health check failed", { description: String(err) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalIssues = reports.reduce((sum, r) => sum + r.issues.length, 0);
+  const criticalCount = reports.reduce(
+    (sum, r) => sum + r.issues.filter((i) => i.severity === "critical").length,
+    0,
+  );
+
+  return (
+    <div className="rounded-xl border bg-card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <HeartPulse size={14} className="text-muted-foreground" />
+          <span className="text-sm font-medium">Key Health Check</span>
+        </div>
+        <button
+          type="button"
+          onClick={runCheck}
+          disabled={loading}
+          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent disabled:opacity-50"
+        >
+          {loading ? "Checking..." : "Run Check"}
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Analyze all SSH keys for algorithm strength, missing files, and security issues.
+      </p>
+
+      {ran && (
+        <div className="space-y-2 pt-1">
+          {/* Summary */}
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-muted-foreground">{reports.length} profiles checked</span>
+            {totalIssues === 0 ? (
+              <span className="text-success font-medium">All keys healthy</span>
+            ) : (
+              <>
+                {criticalCount > 0 && (
+                  <span className="text-destructive font-medium">{criticalCount} critical</span>
+                )}
+                <span className="text-warning font-medium">{totalIssues} issue(s)</span>
+              </>
+            )}
+          </div>
+
+          {/* Per-profile results */}
+          {reports.map((r) => (
+            <div key={r.profile_name} className="p-2.5 rounded-lg bg-secondary/40 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium">{r.profile_name}</span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {r.key_type} {r.bits > 0 ? `${r.bits}b` : ""}
+                </span>
+              </div>
+              {r.issues.length === 0 ? (
+                <div className="flex items-center gap-1 text-[11px] text-success">
+                  <Check size={11} /> No issues
+                </div>
+              ) : (
+                r.issues.map((issue, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-start gap-1.5 text-[11px] ${
+                      issue.severity === "critical"
+                        ? "text-destructive"
+                        : issue.severity === "warning"
+                          ? "text-warning"
+                          : "text-muted-foreground"
+                    }`}
+                  >
+                    <AlertCircle size={11} className="mt-0.5 shrink-0" />
+                    {issue.message}
+                  </div>
+                ))
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

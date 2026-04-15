@@ -4,30 +4,49 @@ use std::path::PathBuf;
 
 use crate::models::security::AuditEntry;
 
-fn data_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not find home directory");
-    home.join(".maze-ssh")
+fn data_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".maze-ssh"))
 }
 
-fn audit_path() -> PathBuf {
-    data_dir().join("audit.log")
+fn audit_path() -> Option<PathBuf> {
+    data_dir().map(|d| d.join("audit.log"))
 }
+
+/// Maximum audit log size before rotation (1 MB)
+const MAX_LOG_SIZE: u64 = 1_048_576;
 
 pub fn append_log(entry: &AuditEntry) {
-    let dir = data_dir();
+    let (Some(dir), Some(path)) = (data_dir(), audit_path()) else {
+        return; // silently skip if home directory is unavailable
+    };
+
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }
 
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(audit_path())
-    {
+    // Rotate if log exceeds max size
+    if let Ok(metadata) = fs::metadata(&path) {
+        if metadata.len() > MAX_LOG_SIZE {
+            let _ = rotate_log(&path);
+        }
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
         if let Ok(line) = serde_json::to_string(entry) {
             let _ = writeln!(file, "{}", line);
         }
     }
+}
+
+/// Rotate the audit log: rename current to .1, discard older rotations
+fn rotate_log(path: &std::path::Path) -> Result<(), std::io::Error> {
+    let rotated = path.with_extension("log.1");
+    // Remove previous rotation if exists
+    if rotated.exists() {
+        fs::remove_file(&rotated)?;
+    }
+    fs::rename(path, &rotated)?;
+    Ok(())
 }
 
 pub fn read_logs(
@@ -35,7 +54,10 @@ pub fn read_logs(
     offset: usize,
     action_filter: Option<&str>,
 ) -> Vec<AuditEntry> {
-    let path = audit_path();
+    let path = match audit_path() {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
     if !path.exists() {
         return Vec::new();
     }
@@ -52,7 +74,7 @@ pub fn read_logs(
         .filter_map(|line| serde_json::from_str::<AuditEntry>(&line).ok())
         .filter(|entry| {
             action_filter
-                .map(|f| entry.action == f)
+                .map(|f| entry.action == f || entry.action.starts_with(f))
                 .unwrap_or(true)
         })
         .collect();

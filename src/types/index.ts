@@ -125,6 +125,8 @@ export interface AuditEntry {
   action: string;
   profile_name: string | null;
   result: string;
+  distro?: string | null;
+  provider?: string | null;
 }
 
 // ── M4: Advanced Types ──
@@ -141,6 +143,174 @@ export interface KeyFingerprint {
   hash: string;
   comment: string;
   key_type: string;
+}
+
+export interface KeyHealthReport {
+  profile_name: string;
+  key_type: string;
+  bits: number;
+  has_public_key: boolean;
+  has_passphrase: boolean;
+  is_hardware_key: boolean;
+  issues: KeyHealthIssue[];
+}
+
+export interface KeyHealthIssue {
+  severity: "critical" | "warning" | "info";
+  message: string;
+}
+
+// ── WSL Bridge Types ──
+
+export type BridgeProviderType = "windows-open-ssh" | "one-password" | "pageant" | "custom";
+
+export type RelayMode = "systemd" | "daemon";
+
+export interface BridgeProvider {
+  type: BridgeProviderType;
+  pipe_path?: string;
+}
+
+export interface ProviderStatus {
+  provider: BridgeProvider;
+  display_name: string;
+  available: boolean;
+  error: string | null;
+}
+
+export interface RelayBinaryStatus {
+  binary: "Npiperelay" | "WslSshPageant";
+  installed: boolean;
+  path: string;
+}
+
+export interface WslDistro {
+  name: string;
+  state: string;
+  version: number;
+  is_default: boolean;
+}
+
+export interface ShellProfile {
+  shell: string;    // "bash" | "zsh" | "fish"
+  rc_file: string;  // "~/.bashrc" | "~/.zshrc" | "~/.config/fish/config.fish"
+  is_installed: boolean;
+}
+
+export interface DistroBridgeStatus {
+  distro_name: string;
+  wsl_version: number;
+  distro_running: boolean;
+  enabled: boolean;
+  provider: BridgeProvider;
+  relay_installed: boolean;
+  service_active: boolean;
+  socket_exists: boolean;
+  agent_reachable: boolean;
+  allow_agent_forwarding: boolean;
+  socat_installed: boolean;
+  systemd_available: boolean;
+  relay_mode: RelayMode;
+  auto_restart: boolean;
+  watchdog_restart_count: number;
+  relay_script_stale: boolean;
+  max_restarts: number;
+  detected_shells: ShellProfile[];
+  socket_path: string;
+  error: string | null;
+}
+
+export interface ShellInjection {
+  shell: string;
+  rc_file: string;
+  injected_block: string | null;
+  has_forward_block: boolean;
+}
+
+export interface SshHostTestResult {
+  command: string;
+  output: string;
+  connected: boolean;
+  authenticated: boolean;
+  exit_code: number;
+}
+
+// ── Phase 8: Health history ring buffer ──
+
+export type BridgeHistoryEventKind =
+  | "bridgeStarted"
+  | "bridgeStopped"
+  | "watchdogRestart"
+  | "watchdogPaused"
+  | "relayRefreshed"
+  | "bridgeBootstrapped"
+  | "bridgeTeardown";
+
+export interface BridgeHistoryEvent {
+  timestamp: string;
+  event: BridgeHistoryEventKind;
+  detail: string | null;
+}
+
+export interface DiagnosticsStep {
+  name: string;
+  passed: boolean;
+  detail: string | null;
+  remediation_cmd: string | null;
+}
+
+export interface DiagnosticsResult {
+  distro: string;
+  steps: DiagnosticsStep[];
+  keys_visible: string[];
+  suggestions: string[];
+}
+
+export interface BinaryVersion {
+  npiperelay?: string;
+  wsl_ssh_pageant?: string;
+}
+
+export interface DownloadProgress {
+  binary: string;
+  percent: number;
+  status: "downloading" | "done" | "error";
+}
+
+export interface BinaryUpdateStatus {
+  binary: string;                    // "npiperelay" | "wsl_ssh_pageant"
+  installed_version: string | null;
+  latest_version: string | null;
+  update_available: boolean;
+}
+
+export interface RelayRestartedEvent {
+  distro: string;
+}
+
+export interface RelayRestartFailedEvent {
+  distro: string;
+  count: number;
+}
+
+export interface NamedPipeEntry {
+  path: string;
+  display: string;
+}
+
+export interface BootstrapAllResult {
+  distro: string;
+  success: boolean;
+  error: string | null;
+}
+
+export interface BridgeOverview {
+  wsl_available: boolean;
+  npiperelay_installed: boolean;
+  windows_agent_running: boolean;
+  provider_statuses: ProviderStatus[];
+  relay_binaries: RelayBinaryStatus[];
+  distros: DistroBridgeStatus[];
 }
 
 // ── Helpers ──

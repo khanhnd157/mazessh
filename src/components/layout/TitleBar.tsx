@@ -99,6 +99,7 @@ export function TitleBar() {
             type="button"
             onClick={() => lockApp().catch(() => {})}
             title="Lock app"
+            aria-label="Lock app"
             className="h-full w-10 flex items-center justify-center text-muted-foreground/60 hover:text-muted-foreground hover:bg-foreground/5 transition-colors"
           >
             <Lock size={13} />
@@ -108,15 +109,17 @@ export function TitleBar() {
           type="button"
           onClick={toggleTheme}
           title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           className="h-full w-10 flex items-center justify-center text-muted-foreground/60 hover:text-muted-foreground hover:bg-foreground/5 transition-colors"
         >
           {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
         </button>
-        <div className="w-px h-3.5 bg-border/50 mx-0.5" />
+        <div className="w-px h-3.5 bg-border/50 mx-0.5" aria-hidden="true" />
         <button
           type="button"
           onClick={() => appWindow.minimize()}
           title="Minimize"
+          aria-label="Minimize window"
           className="h-full w-11.5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-foreground/5 transition-colors"
         >
           <Minus size={15} strokeWidth={1} />
@@ -125,6 +128,7 @@ export function TitleBar() {
           type="button"
           onClick={() => appWindow.toggleMaximize()}
           title={maximized ? "Restore" : "Maximize"}
+          aria-label={maximized ? "Restore window" : "Maximize window"}
           className="h-full w-11.5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-foreground/5 transition-colors"
         >
           {maximized ? (
@@ -137,6 +141,7 @@ export function TitleBar() {
           type="button"
           onClick={() => appWindow.hide()}
           title="Close"
+          aria-label="Close window"
           className="h-full w-11.5 flex items-center justify-center text-muted-foreground/60 hover:bg-[#c42b1c] hover:text-white transition-colors"
         >
           <X size={15} strokeWidth={1.5} />
@@ -226,7 +231,7 @@ function SwitchDropdown() {
         <div
           ref={dropdownRef}
           style={{ top: dropdownPos.top, left: dropdownPos.left }}
-          className="fixed w-60 rounded-lg border bg-popover shadow-xl shadow-black/20 z-999 overflow-hidden animate-fade-in"
+          className="fixed w-60 rounded-lg border bg-popover shadow-xl shadow-black/20 z-50 overflow-hidden animate-fade-in"
         >
           <div className="px-3 py-1.5 border-b">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">

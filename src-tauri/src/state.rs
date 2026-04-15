@@ -1,13 +1,29 @@
+use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 
+use crate::models::bridge::BridgeConfig;
 use crate::models::profile::SshProfile;
 use crate::models::repo_mapping::RepoMapping;
 use crate::models::security::SecuritySettings;
 
+/// Per-distro watchdog tracking state (not persisted, reset on app restart)
+pub struct WatchdogEntry {
+    /// Was the relay active on the last poll?
+    pub was_active: bool,
+    /// Number of auto-restarts since last healthy observation
+    pub restart_count: u8,
+    /// When the last restart was attempted
+    pub last_restart_at: Option<Instant>,
+}
+
 pub struct AppState {
     pub inner: RwLock<AppStateInner>,
     pub security: Mutex<SecurityState>,
+    pub bridge: RwLock<BridgeConfig>,
+    /// Watchdog state: distro_name → per-distro tracking entry.
+    /// Initialized empty; first-poll entries are set without triggering a restart.
+    pub relay_watchdog_state: Mutex<HashMap<String, WatchdogEntry>>,
 }
 
 pub struct AppStateInner {
@@ -24,6 +40,10 @@ pub struct SecurityState {
     pub settings: SecuritySettings,
     pub failed_pin_attempts: u32,
     pub last_failed_attempt: Option<Instant>,
+    /// Monotonically increasing counter — incremented on every profile activation.
+    /// Background tasks compare their captured value against the current counter
+    /// to detect if a newer activation has superseded them.
+    pub activation_counter: u64,
 }
 
 impl AppState {
@@ -43,7 +63,10 @@ impl AppState {
                 settings: SecuritySettings::default(),
                 failed_pin_attempts: 0,
                 last_failed_attempt: None,
+                activation_counter: 0,
             }),
+            bridge: RwLock::new(BridgeConfig::default()),
+            relay_watchdog_state: Mutex::new(HashMap::new()),
         }
     }
 
@@ -53,6 +76,7 @@ impl AppState {
         repo_mappings: Vec<RepoMapping>,
         settings: SecuritySettings,
         pin_is_set: bool,
+        bridge_config: BridgeConfig,
     ) -> Self {
         Self {
             inner: RwLock::new(AppStateInner {
@@ -68,7 +92,10 @@ impl AppState {
                 settings,
                 failed_pin_attempts: 0,
                 last_failed_attempt: None,
+                activation_counter: 0,
             }),
+            bridge: RwLock::new(bridge_config),
+            relay_watchdog_state: Mutex::new(HashMap::new()),
         }
     }
 }

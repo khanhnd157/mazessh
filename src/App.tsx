@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "sonner";
-import { KeyRound, FileCode2, FolderGit2, Settings } from "lucide-react";
+import { KeyRound, FileCode2, FolderGit2, Monitor, Settings } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
 import { useAppStore } from "@/stores/appStore";
 import { useLogStore } from "@/stores/logStore";
@@ -14,10 +14,12 @@ import { TitleBar } from "@/components/layout/TitleBar";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MainPanel } from "@/components/layout/MainPanel";
 import { BottomBar } from "@/components/layout/BottomBar";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ConfigPreview } from "@/components/ssh-config/ConfigPreview";
 import { RepoMappingList } from "@/components/repos/RepoMappingList";
 import { LockScreen } from "@/components/security/LockScreen";
 import { SecuritySettingsPanel } from "@/components/settings/SecuritySettings";
+import { WslBridgePanel } from "@/components/settings/WslBridgeSettings";
 import type { AgentStatusEvent } from "@/types";
 
 function App() {
@@ -99,10 +101,11 @@ function App() {
       {isLocked && initialized && <LockScreen />}
 
       <TitleBar />
+      <ErrorBoundary>
       <div className="flex-1 min-h-0 flex overflow-hidden">
         <Sidebar />
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <div className="flex border-b bg-card/30 h-10 shrink-0">
+          <div className="flex border-b bg-card/30 h-10 shrink-0" role="tablist" aria-label="Main navigation">
             <TabButton
               icon={<KeyRound size={14} />}
               label="Profiles"
@@ -122,6 +125,12 @@ function App() {
               onClick={() => setActiveTab("config")}
             />
             <TabButton
+              icon={<Monitor size={14} />}
+              label="WSL Bridge"
+              active={activeTab === "bridge"}
+              onClick={() => setActiveTab("bridge")}
+            />
+            <TabButton
               icon={<Settings size={14} />}
               label="Settings"
               active={activeTab === "settings"}
@@ -139,6 +148,9 @@ function App() {
             <TabPanel active={activeTab === "config"} scrollable>
               <ConfigPreview />
             </TabPanel>
+            <TabPanel active={activeTab === "bridge"} scrollable>
+              <WslBridgePanel />
+            </TabPanel>
             <TabPanel active={activeTab === "settings"} scrollable>
               <SecuritySettingsPanel />
             </TabPanel>
@@ -146,6 +158,7 @@ function App() {
         </div>
       </div>
       <BottomBar />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -164,6 +177,8 @@ function TabButton({
   return (
     <button
       type="button"
+      role="tab"
+      aria-selected={active}
       onClick={onClick}
       className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all duration-150 ${
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -173,6 +188,7 @@ function TabButton({
       {label}
       {/* Animated underline indicator */}
       <span
+        aria-hidden="true"
         className={`absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-primary transition-all duration-200 ease-out ${
           active ? "opacity-100 scale-x-100" : "opacity-0 scale-x-0"
         }`}
@@ -192,6 +208,9 @@ function TabPanel({
 }) {
   return (
     <div
+      role="tabpanel"
+      aria-hidden={!active}
+      tabIndex={active ? 0 : -1}
       className={`absolute inset-0 transition-opacity duration-150 ease-in-out ${
         active
           ? "opacity-100 z-10 pointer-events-auto"

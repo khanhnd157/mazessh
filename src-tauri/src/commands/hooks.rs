@@ -84,7 +84,11 @@ fi
 
 /// Remove the pre-push hook from a repo
 #[tauri::command]
-pub fn remove_git_hook(repo_path: String) -> Result<(), MazeSshError> {
+pub fn remove_git_hook(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    ensure_unlocked(&state)?;
     let p = PathBuf::from(&repo_path);
     let git_root = repo_detection_service::find_git_root(&p)
         .ok_or_else(|| MazeSshError::NotAGitRepo(p))?;
