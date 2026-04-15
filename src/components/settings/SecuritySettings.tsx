@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { Shield, Lock, Clock, KeyRound, AlertCircle, Check, Download, Upload, HeartPulse } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
@@ -43,7 +43,7 @@ export function SecuritySettingsPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleUpdateSetting = async (partial: Partial<SecuritySettingsType>) => {
+  const handleUpdateSetting = useCallback(async (partial: Partial<SecuritySettingsType>) => {
     if (!settings) return;
     const updated = { ...settings, ...partial };
     try {
@@ -52,7 +52,8 @@ export function SecuritySettingsPanel() {
     } catch (err) {
       toast.error("Failed to update settings", { description: String(err) });
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, updateSettings]);
 
   const handlePinSubmit = async () => {
     setPinError("");
@@ -309,14 +310,7 @@ export function SecuritySettingsPanel() {
       {/* Section: Agent Mode */}
       {settings && (
         <div className="rounded-xl border bg-card p-4">
-          <AgentModeSettings settings={settings} onUpdate={async (s) => {
-            try {
-              await updateSettings(s);
-              toast.success("Settings updated");
-            } catch (err) {
-              toast.error("Failed to update settings", { description: String(err) });
-            }
-          }} />
+          <AgentModeSettings settings={settings} onUpdate={handleUpdateSetting} />
         </div>
       )}
 

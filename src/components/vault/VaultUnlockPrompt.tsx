@@ -3,7 +3,8 @@ import { Lock, Unlock, AlertCircle } from "lucide-react";
 import { useVaultStore } from "@/stores/vaultStore";
 
 export function VaultUnlockPrompt() {
-  const { unlockVault, loading } = useVaultStore();
+  const unlockVault = useVaultStore((s) => s.unlockVault);
+  const loading = useVaultStore((s) => s.loading);
   const [passphrase, setPassphrase] = useState("");
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);

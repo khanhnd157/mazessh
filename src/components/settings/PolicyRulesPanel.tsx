@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { memo, useCallback, useState, useEffect } from "react";
 import { Shield, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
@@ -10,11 +10,43 @@ interface PolicyRule {
   created_at: string;
 }
 
+const PolicyRuleRow = memo(function PolicyRuleRow({
+  rule,
+  onDelete,
+}: {
+  rule: PolicyRule;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/40">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium">{rule.key_name}</div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-success/15 text-success font-medium">
+            Always Allow
+          </span>
+          <span className="text-[10px] text-muted-foreground/40">
+            Since {new Date(rule.created_at).toLocaleDateString()}
+          </span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onDelete(rule.key_id)}
+        title="Remove rule"
+        className="p-1.5 rounded-md text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
+      >
+        <Trash2 size={12} />
+      </button>
+    </div>
+  );
+});
+
 export function PolicyRulesPanel() {
   const [rules, setRules] = useState<PolicyRule[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchRules = async () => {
+  const fetchRules = useCallback(async () => {
     setLoading(true);
     try {
       const r = await commands.listPolicyRules();
@@ -24,23 +56,23 @@ export function PolicyRulesPanel() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchRules();
-  }, []);
+  }, [fetchRules]);
 
-  const handleDelete = async (keyId: string) => {
+  const handleDelete = useCallback(async (keyId: string) => {
     try {
       await commands.deletePolicyRule(keyId);
       toast.success("Rule removed");
-      fetchRules();
+      setRules((prev) => prev.filter((r) => r.key_id !== keyId));
     } catch (e) {
       toast.error("Failed to remove rule", { description: String(e) });
     }
-  };
+  }, []);
 
-  const handleClearAll = async () => {
+  const handleClearAll = useCallback(async () => {
     try {
       await commands.clearAllPolicyRules();
       toast.success("All rules cleared");
@@ -48,7 +80,7 @@ export function PolicyRulesPanel() {
     } catch (e) {
       toast.error("Failed to clear rules", { description: String(e) });
     }
-  };
+  }, []);
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -72,7 +104,17 @@ export function PolicyRulesPanel() {
       </p>
 
       {loading ? (
-        <div className="text-xs text-muted-foreground/50 py-2">Loading...</div>
+        <div className="space-y-1.5" aria-hidden="true">
+          {[1, 2].map((i) => (
+            <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/40">
+              <div className="space-y-1.5 flex-1">
+                <div className="h-3 w-32 rounded bg-muted animate-pulse" />
+                <div className="h-2.5 w-20 rounded bg-muted/60 animate-pulse" />
+              </div>
+              <div className="w-6 h-6 rounded bg-muted/40 animate-pulse" />
+            </div>
+          ))}
+        </div>
       ) : rules.length === 0 ? (
         <div className="text-xs text-muted-foreground/40 py-2">
           No policy rules set. Rules are created when you approve a signing request.
@@ -80,30 +122,7 @@ export function PolicyRulesPanel() {
       ) : (
         <div className="space-y-1.5">
           {rules.map((rule) => (
-            <div
-              key={rule.key_id}
-              className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/40"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-medium">{rule.key_name}</div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-success/15 text-success font-medium">
-                    Always Allow
-                  </span>
-                  <span className="text-[10px] text-muted-foreground/40">
-                    Since {new Date(rule.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleDelete(rule.key_id)}
-                title="Remove rule"
-                className="p-1.5 rounded-md text-muted-foreground/30 hover:text-destructive hover:bg-destructive/10 transition-colors"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
+            <PolicyRuleRow key={rule.key_id} rule={rule} onDelete={handleDelete} />
           ))}
         </div>
       )}
