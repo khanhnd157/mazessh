@@ -69,6 +69,12 @@ pub fn save_rules(vault_dir: &Path, rules: &[PolicyRule]) -> Result<(), std::io:
     let tmp_path = path.with_extension("tmp");
     fs::write(&tmp_path, &content)?;
     fs::rename(&tmp_path, &path)?;
+    // Restrict file permissions to owner only
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
     Ok(())
 }
 
