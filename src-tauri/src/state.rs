@@ -40,6 +40,10 @@ pub struct SecurityState {
     pub settings: SecuritySettings,
     pub failed_pin_attempts: u32,
     pub last_failed_attempt: Option<Instant>,
+    /// Monotonically increasing counter — incremented on every profile activation.
+    /// Background tasks compare their captured value against the current counter
+    /// to detect if a newer activation has superseded them.
+    pub activation_counter: u64,
 }
 
 impl AppState {
@@ -59,6 +63,7 @@ impl AppState {
                 settings: SecuritySettings::default(),
                 failed_pin_attempts: 0,
                 last_failed_attempt: None,
+                activation_counter: 0,
             }),
             bridge: RwLock::new(BridgeConfig::default()),
             relay_watchdog_state: Mutex::new(HashMap::new()),
@@ -87,6 +92,7 @@ impl AppState {
                 settings,
                 failed_pin_attempts: 0,
                 last_failed_attempt: None,
+                activation_counter: 0,
             }),
             bridge: RwLock::new(bridge_config),
             relay_watchdog_state: Mutex::new(HashMap::new()),

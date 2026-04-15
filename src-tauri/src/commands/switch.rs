@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::profile::ProfileSummary;
-use crate::services::{git_identity_service, profile_service, ssh_engine};
+use crate::services::{git_identity_service, profile_service, security as security_service, ssh_engine};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,11 +28,13 @@ pub async fn activate_profile(
 ) -> Result<ActivationResult, MazeSshError> {
     ensure_unlocked(&state)?;
 
-    // Mark agent activation time for session timeout
-    {
+    // Mark agent activation time for session timeout, and capture sequence number
+    let our_seq = {
         let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
         security.agent_activated_at = Some(std::time::Instant::now());
-    }
+        security.activation_counter = security.activation_counter.wrapping_add(1);
+        security.activation_counter
+    };
 
     // Step 1: Quick state update (instant)
     let (profile, git_ssh_command, key_path) = {
@@ -57,9 +59,20 @@ pub async fn activate_profile(
 
     let profile_name = profile.name.clone();
     let profile_for_bg = profile.clone();
+    let profile_id_for_bg = id.clone();
 
     // Step 3: Heavy agent/env work in background (doesn't block UI)
+    let app_bg = app.clone();
     tokio::task::spawn_blocking(move || {
+        // Bail out if a newer activation has superseded this one
+        let still_latest = app_bg.state::<AppState>()
+            .security.lock()
+            .map(|s| s.activation_counter == our_seq)
+            .unwrap_or(false);
+        if !still_latest {
+            return;
+        }
+
         let mut status_parts: Vec<String> = Vec::new();
 
         // Set persistent user environment variable
@@ -69,8 +82,14 @@ pub async fn activate_profile(
         }
 
         // Start SSH agent and add key
+        // If the key has a passphrase, retrieve it from keyring and pass to ssh-add
+        let passphrase = if profile_for_bg.has_passphrase {
+            security_service::get_passphrase(&profile_id_for_bg).ok().flatten()
+        } else {
+            None
+        };
         match ssh_engine::ensure_agent_running() {
-            Ok(true) => match ssh_engine::agent_switch_key(&key_path) {
+            Ok(true) => match ssh_engine::agent_switch_key(&key_path, passphrase.as_deref()) {
                 Ok(_) => status_parts.push("Key loaded into ssh-agent".to_string()),
                 Err(e) => status_parts.push(format!("ssh-add failed: {}", e)),
             },
@@ -92,7 +111,7 @@ pub async fn activate_profile(
         let success = status_parts.iter().any(|s| s.contains("loaded"));
         let status = status_parts.join(" | ");
 
-        let _ = app.emit(
+        let _ = app_bg.emit(
             "agent-status",
             AgentStatusEvent {
                 status: status.clone(),
@@ -150,6 +169,7 @@ pub async fn deactivate_profile(
 pub fn get_active_profile(
     state: State<'_, AppState>,
 ) -> Result<Option<ProfileSummary>, MazeSshError> {
+    ensure_unlocked(&state)?;
     let inner = state.inner.read().map_err(|_| MazeSshError::StateLockError)?;
     if let Some(active_id) = &inner.active_profile_id {
         let profile = inner.profiles.iter().find(|p| p.id == *active_id);

@@ -21,9 +21,22 @@ use tauri::{
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn update_tray_tooltip(app: tauri::AppHandle, tooltip: String) {
+fn update_tray_tooltip(app: tauri::AppHandle, state: tauri::State<'_, AppState>, profile_id: Option<String>) {
+    let text = match &profile_id {
+        Some(id) => {
+            if let Ok(inner) = state.inner.read() {
+                inner.profiles.iter()
+                    .find(|p| &p.id == id)
+                    .map(|p| format!("Maze SSH - {}", p.name))
+                    .unwrap_or_else(|| "Maze SSH - No active profile".to_string())
+            } else {
+                "Maze SSH".to_string()
+            }
+        }
+        None => "Maze SSH - No active profile".to_string(),
+    };
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let _ = tray.set_tooltip(Some(&tooltip));
+        let _ = tray.set_tooltip(Some(&text));
     }
 }
 
