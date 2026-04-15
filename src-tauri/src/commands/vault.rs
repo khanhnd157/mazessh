@@ -12,6 +12,13 @@ use maze_vault::{
     UpdateKeyInput,
 };
 
+// ── Agent info ───────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_agent_pipe_path() -> String {
+    crate::services::agent_service::PIPE_NAME.to_string()
+}
+
 // ── Vault lifecycle ──────────────────────────────────────────────
 
 #[tauri::command]
@@ -355,4 +362,59 @@ pub fn delete_original_key_file(
 
     audit_service::log_action("delete_original_key", Some(&key_path), "success");
     Ok(())
+}
+
+// ── Consent ──────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn respond_to_consent(
+    consent_id: String,
+    approved: bool,
+    selected_key_id: String,
+    allow_mode: String,
+    state: State<'_, AppState>,
+) -> Result<(), MazeSshError> {
+    let mut consents = state
+        .pending_consents
+        .lock()
+        .map_err(|_| MazeSshError::StateLockError)?;
+
+    if let Some(pending) = consents.remove(&consent_id) {
+        let decision = crate::state::ConsentDecision {
+            approved,
+            selected_key_id,
+            allow_mode: allow_mode.clone(),
+        };
+        // If the receiver was dropped (timeout), this is a no-op
+        let _ = pending.tx.send(decision);
+
+        let action = if approved { "consent_approved" } else { "consent_denied" };
+        audit_service::log_action(action, Some(&pending.key_name), &allow_mode);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_pending_consent(
+    state: State<'_, AppState>,
+) -> Result<Option<serde_json::Value>, MazeSshError> {
+    let consents = state
+        .pending_consents
+        .lock()
+        .map_err(|_| MazeSshError::StateLockError)?;
+
+    // Return the first pending consent (FIFO order not guaranteed with HashMap,
+    // but there's typically only one at a time)
+    if let Some((id, pending)) = consents.iter().next() {
+        Ok(Some(serde_json::json!({
+            "consent_id": id,
+            "key_id": pending.key_id,
+            "key_name": pending.key_name,
+            "process_name": pending.process_name,
+            "host": pending.host,
+        })))
+    } else {
+        Ok(None)
+    }
 }

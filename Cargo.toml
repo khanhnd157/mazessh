@@ -3,6 +3,7 @@ members = [
     "src-tauri",
     "crates/maze-crypto",
     "crates/maze-vault",
+    "crates/maze-agent-protocol",
 ]
 resolver = "2"
 

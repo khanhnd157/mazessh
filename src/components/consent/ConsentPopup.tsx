@@ -1,18 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { Shield, Lock, Unlock, AlertCircle, Clock } from "lucide-react";
 import { commands } from "@/lib/tauri-commands";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { SshKeyItemSummary, VaultStateResponse } from "@/types";
+import type { VaultStateResponse, SshKeyItemSummary } from "@/types";
 
 type AllowMode = "once" | "session" | "always";
 
-interface ConsentRequestData {
-  request_id: string;
+interface PendingConsent {
+  consent_id: string;
+  key_id: string;
+  key_name: string;
   process_name: string;
-  process_path: string;
   host: string;
-  available_keys: SshKeyItemSummary[];
-  default_key_id: string | null;
 }
 
 export function ConsentPopup() {
@@ -21,17 +21,46 @@ export function ConsentPopup() {
   const [unlockError, setUnlockError] = useState("");
   const [unlocking, setUnlocking] = useState(false);
 
-  // Consent state (placeholder for M2 — when agent protocol is wired)
-  const [request] = useState<ConsentRequestData | null>(null);
+  const [pending, setPending] = useState<PendingConsent | null>(null);
+  const [keys, setKeys] = useState<SshKeyItemSummary[]>([]);
   const [selectedKeyId, setSelectedKeyId] = useState("");
   const [allowMode, setAllowMode] = useState<AllowMode>("once");
   const [countdown, setCountdown] = useState(60);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Fetch vault state and pending consent on mount
   useEffect(() => {
     commands.vaultGetState().then(setVaultState).catch(() => {});
+    fetchPending();
+
+    // Listen for new consent requests
+    const unlisten = listen<{ consent_id: string }>("consent-request", () => {
+      fetchPending();
+    });
+
+    return () => { unlisten.then((fn) => fn()); };
   }, []);
+
+  const fetchPending = async () => {
+    try {
+      const p = await commands.getPendingConsent();
+      if (p) {
+        setPending(p);
+        setSelectedKeyId(p.key_id);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // Fetch keys when vault is unlocked
+  useEffect(() => {
+    if (vaultState?.unlocked) {
+      commands.vaultListKeys().then(setKeys).catch(() => {});
+      fetchPending();
+    }
+  }, [vaultState?.unlocked]);
 
   // Auto-focus passphrase input
   useEffect(() => {
@@ -65,10 +94,10 @@ export function ConsentPopup() {
   };
 
   const handleAllow = async () => {
+    if (!pending) return;
     setSubmitting(true);
     try {
-      // M2: will call commands.respondToConsent here
-      // For now, just close the window
+      await commands.respondToConsent(pending.consent_id, true, selectedKeyId, allowMode);
       getCurrentWindow().close();
     } catch {
       setSubmitting(false);
@@ -77,7 +106,9 @@ export function ConsentPopup() {
 
   const handleDeny = async () => {
     try {
-      // M2: will call commands.respondToConsent with deny here
+      if (pending) {
+        await commands.respondToConsent(pending.consent_id, false, "", "once");
+      }
       getCurrentWindow().close();
     } catch {
       // ignore close errors
@@ -102,6 +133,7 @@ export function ConsentPopup() {
           <button
             type="button"
             onClick={() => appWindow.close()}
+            title="Close"
             className="p-1 rounded hover:bg-secondary transition-colors text-muted-foreground/50 hover:text-foreground"
           >
             <span className="text-xs leading-none">&times;</span>
@@ -156,104 +188,105 @@ export function ConsentPopup() {
               Deny request
             </button>
           </div>
-        ) : (
-          /* Vault unlocked — show consent form */
+        ) : pending ? (
+          /* Vault unlocked + pending request — show consent form */
           <div className="space-y-4">
             {/* Request info */}
-            {request ? (
-              <div className="rounded-lg bg-secondary/50 p-3 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-medium text-muted-foreground/70 uppercase">Application</span>
-                  <span className="text-xs font-medium">{request.process_name}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-medium text-muted-foreground/70 uppercase">Host</span>
-                  <span className="text-xs font-medium text-primary">{request.host}</span>
-                </div>
+            <div className="rounded-lg bg-secondary/50 p-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-medium text-muted-foreground/70 uppercase">Application</span>
+                <span className="text-xs font-medium">{pending.process_name}</span>
               </div>
-            ) : (
-              <div className="rounded-lg bg-secondary/50 p-4 text-center">
-                <Shield size={20} className="text-primary/40 mx-auto mb-2" />
-                <p className="text-xs text-muted-foreground/60">
-                  Consent popup ready. Waiting for SSH signing request...
-                </p>
-                <p className="text-[10px] text-muted-foreground/40 mt-1">
-                  This window will be triggered by the agent in M2.
-                </p>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-medium text-muted-foreground/70 uppercase">Host</span>
+                <span className="text-xs font-medium text-primary">{pending.host}</span>
               </div>
-            )}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-medium text-muted-foreground/70 uppercase">Requested Key</span>
+                <span className="text-xs font-medium">{pending.key_name}</span>
+              </div>
+            </div>
 
-            {/* Key selection (shown when request available) */}
-            {request && request.available_keys.length > 0 && (
+            {/* Key selection */}
+            {keys.length > 0 && (
               <div className="space-y-1.5">
                 <h4 className="text-[10px] font-medium text-muted-foreground/70 uppercase">Select SSH Key</h4>
-                {request.available_keys.map((key) => (
-                  <label
-                    key={key.id}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
-                      selectedKeyId === key.id
-                        ? "bg-primary/8 border-primary/25"
-                        : "bg-secondary/30 border-border hover:bg-accent/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="key"
-                      checked={selectedKeyId === key.id}
-                      onChange={() => setSelectedKeyId(key.id)}
-                      className="accent-primary"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium truncate">{key.name}</div>
-                      <div className="text-[10px] text-muted-foreground/50 font-mono truncate">{key.fingerprint}</div>
-                    </div>
-                    <span className="text-[8px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
-                      {key.algorithm === "ed25519" ? "Ed25519" : "RSA"}
-                    </span>
-                  </label>
-                ))}
+                {keys
+                  .filter((k) => k.state === "active")
+                  .map((key) => (
+                    <label
+                      key={key.id}
+                      className={`flex items-center gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                        selectedKeyId === key.id
+                          ? "bg-primary/8 border-primary/25"
+                          : "bg-secondary/30 border-border hover:bg-accent/50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="key"
+                        checked={selectedKeyId === key.id}
+                        onChange={() => setSelectedKeyId(key.id)}
+                        className="accent-primary"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium truncate">{key.name}</div>
+                        <div className="text-[10px] text-muted-foreground/50 font-mono truncate">{key.fingerprint}</div>
+                      </div>
+                      <span className="text-[8px] px-1 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0">
+                        {key.algorithm === "ed25519" ? "Ed25519" : "RSA"}
+                      </span>
+                    </label>
+                  ))}
               </div>
             )}
 
-            {/* Allow mode + buttons */}
-            {request && (
-              <>
-                <div className="flex gap-1.5">
-                  {(["once", "session", "always"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setAllowMode(mode)}
-                      className={`flex-1 py-1.5 text-[10px] font-medium rounded-lg border transition-colors ${
-                        allowMode === mode
-                          ? "bg-primary/15 border-primary/30 text-primary"
-                          : "bg-secondary border-border text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {mode === "once" ? "Once" : mode === "session" ? "Session" : "Always"}
-                    </button>
-                  ))}
-                </div>
+            {/* Allow mode */}
+            <div className="flex gap-1.5">
+              {(["once", "session", "always"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setAllowMode(mode)}
+                  className={`flex-1 py-1.5 text-[10px] font-medium rounded-lg border transition-colors ${
+                    allowMode === mode
+                      ? "bg-primary/15 border-primary/30 text-primary"
+                      : "bg-secondary border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {mode === "once" ? "Once" : mode === "session" ? "Session" : "Always"}
+                </button>
+              ))}
+            </div>
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDeny}
-                    className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors"
-                  >
-                    Deny
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAllow}
-                    disabled={submitting || !selectedKeyId}
-                    className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30"
-                  >
-                    {submitting ? "Allowing..." : "Allow"}
-                  </button>
-                </div>
-              </>
-            )}
+            {/* Action buttons */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleDeny}
+                className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors"
+              >
+                Deny
+              </button>
+              <button
+                type="button"
+                onClick={handleAllow}
+                disabled={submitting || !selectedKeyId}
+                className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-30"
+              >
+                {submitting ? "Allowing..." : "Allow"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Vault unlocked but no pending request */
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <Shield size={20} className="text-primary/40 mx-auto mb-2" />
+              <p className="text-xs text-muted-foreground/60">
+                Waiting for SSH signing request...
+              </p>
+            </div>
           </div>
         )}
       </div>

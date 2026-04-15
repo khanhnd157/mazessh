@@ -2551,6 +2551,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
+name = "maze-agent-protocol"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "ssh-key",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "maze-crypto"
 version = "0.1.0"
 dependencies = [
@@ -2578,12 +2587,14 @@ dependencies = [
  "futures-util",
  "glob",
  "keyring",
+ "maze-agent-protocol",
  "maze-crypto",
  "maze-vault",
  "rand 0.8.5",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "ssh-key",
  "tauri",
  "tauri-build",
  "tauri-plugin-fs",

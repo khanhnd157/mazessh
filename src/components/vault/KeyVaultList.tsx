@@ -4,7 +4,9 @@ import { useVaultStore } from "@/stores/vaultStore";
 import { VaultSetupPrompt } from "./VaultSetupPrompt";
 import { VaultUnlockPrompt } from "./VaultUnlockPrompt";
 import { GenerateKeyDialog } from "./GenerateKeyDialog";
+import { ImportKeyDialog } from "./ImportKeyDialog";
 import { KeyDetailSheet } from "./KeyDetailSheet";
+import { MigrationWizard } from "@/components/migration/MigrationWizard";
 import type { KeyState, SshKeyItemSummary } from "@/types";
 
 export function KeyVaultList() {
@@ -12,6 +14,8 @@ export function KeyVaultList() {
   const [search, setSearch] = useState("");
   const [filterState, setFilterState] = useState<"all" | KeyState>("all");
   const [showGenerate, setShowGenerate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showMigration, setShowMigration] = useState(false);
 
   useEffect(() => {
     if (vaultState?.unlocked) {
@@ -74,6 +78,20 @@ export function KeyVaultList() {
           </div>
           <button
             type="button"
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors"
+          >
+            Import
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowMigration(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors"
+          >
+            Migrate
+          </button>
+          <button
+            type="button"
             onClick={() => setShowGenerate(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
@@ -123,6 +141,8 @@ export function KeyVaultList() {
 
       {/* Dialogs */}
       {showGenerate && <GenerateKeyDialog onClose={() => setShowGenerate(false)} />}
+      {showImport && <ImportKeyDialog onClose={() => setShowImport(false)} />}
+      {showMigration && <MigrationWizard onClose={() => setShowMigration(false)} />}
       {selectedKey && (
         <KeyDetailSheet keyItem={selectedKey} onClose={() => selectKey(null)} />
       )}
