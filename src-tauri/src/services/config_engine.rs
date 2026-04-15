@@ -24,10 +24,14 @@ pub fn generate_config_block(profiles: &[SshProfile]) -> String {
         config.push_str(&format!("Host {}\n", profile.host_alias));
         config.push_str(&format!("  HostName {}\n", profile.hostname));
         config.push_str(&format!("  User {}\n", profile.ssh_user_or_default()));
-        config.push_str(&format!(
-            "  IdentityFile {}\n",
-            profile.private_key_path.to_string_lossy()
-        ));
+        // Quote the path if it contains spaces (common on Windows: C:\Users\John Doe\...)
+        let path_str = profile.private_key_path.to_string_lossy();
+        let identity_file = if path_str.contains(' ') {
+            format!("\"{}\"", path_str)
+        } else {
+            path_str.into_owned()
+        };
+        config.push_str(&format!("  IdentityFile {}\n", identity_file));
         config.push_str("  IdentitiesOnly yes\n");
         if let Some(port) = profile.port {
             if port != 22 {

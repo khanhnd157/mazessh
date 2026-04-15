@@ -184,9 +184,16 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
 
       {/* Key Path */}
       <div>
-        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
-          SSH Private Key
-        </p>
+        <div className="flex items-center gap-2 mb-1.5">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+            SSH Private Key
+          </p>
+          {profile.vault_key_id && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">
+              Vault Managed
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 p-3 rounded-lg bg-secondary group">
           <code className="text-sm font-mono break-all flex-1">{String(profile.private_key_path)}</code>
           <button
