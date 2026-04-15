@@ -9,7 +9,7 @@ use tauri::{Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Notify;
 
-use crate::services::policy_service;
+use crate::services::{audit_service, policy_service};
 use crate::state::{AppState, ConsentDecision, PendingConsent};
 
 /// The named pipe path for the MazeSSH agent on Windows.
@@ -92,6 +92,9 @@ async fn handle_connection(
     mut pipe: tokio::net::windows::named_pipe::NamedPipeServer,
     app_handle: tauri::AppHandle,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Identify the connecting process
+    let client_info = get_pipe_client_info(&pipe);
+
     let mut buf = vec![0u8; 65536];
     let mut pending = Vec::new();
 
@@ -107,7 +110,7 @@ async fn handle_connection(
         while let Some((frame, consumed)) = try_read_frame(&pending) {
             let state = app_handle.state::<AppState>();
             let response = match decode_message(&frame) {
-                Ok(msg) => handle_message(msg, &state, &app_handle).await,
+                Ok(msg) => handle_message(msg, &state, &app_handle, &client_info).await,
                 Err(e) => {
                     eprintln!("[maze-agent] decode error: {e}");
                     AgentResponse::Failure
@@ -124,11 +127,79 @@ async fn handle_connection(
     Ok(())
 }
 
+/// Information about the process that connected to the pipe.
+#[derive(Debug, Clone, Default)]
+struct ClientInfo {
+    pub process_name: String,
+    pub process_path: String,
+    pub pid: u32,
+}
+
+#[cfg(windows)]
+fn get_pipe_client_info(pipe: &tokio::net::windows::named_pipe::NamedPipeServer) -> ClientInfo {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId;
+
+    let mut pid: u32 = 0;
+    let handle = pipe.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+
+    unsafe {
+        if GetNamedPipeClientProcessId(handle, &mut pid) == 0 {
+            return ClientInfo::default();
+        }
+    }
+
+    // Get process name/path from PID
+    get_process_info(pid)
+}
+
+#[cfg(windows)]
+fn get_process_info(pid: u32) -> ClientInfo {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::ProcessStatus::GetModuleFileNameExW;
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid) };
+    if handle.is_null() {
+        return ClientInfo {
+            pid,
+            process_name: format!("PID {pid}"),
+            process_path: String::new(),
+        };
+    }
+
+    let mut buf = [0u16; 512];
+    let len = unsafe { GetModuleFileNameExW(handle, std::ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32) };
+    unsafe { CloseHandle(handle) };
+
+    if len == 0 {
+        return ClientInfo {
+            pid,
+            process_name: format!("PID {pid}"),
+            process_path: String::new(),
+        };
+    }
+
+    let path = OsString::from_wide(&buf[..len as usize])
+        .to_string_lossy()
+        .to_string();
+    let name = path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string();
+
+    ClientInfo {
+        pid,
+        process_name: name,
+        process_path: path,
+    }
+}
+
 /// Handle a single parsed SSH agent message and return a response.
 async fn handle_message(
     msg: AgentMessage,
     app_state: &AppState,
     app_handle: &tauri::AppHandle,
+    client_info: &ClientInfo,
 ) -> AgentResponse {
     match msg {
         AgentMessage::RequestIdentities => handle_request_identities(app_state),
@@ -136,7 +207,7 @@ async fn handle_message(
             key_blob,
             data,
             flags: _,
-        } => handle_sign_request(app_state, app_handle, &key_blob, &data).await,
+        } => handle_sign_request(app_state, app_handle, &key_blob, &data, client_info).await,
         AgentMessage::RemoveAllIdentities => AgentResponse::Success,
         AgentMessage::AddIdentity { .. } => {
             // We don't accept add-identity — keys are managed via vault UI
@@ -192,6 +263,7 @@ async fn handle_sign_request(
     app_handle: &tauri::AppHandle,
     key_blob: &[u8],
     data: &[u8],
+    client_info: &ClientInfo,
 ) -> AgentResponse {
     // Find which vault key matches the key_blob
     let key_id = match find_key_by_blob(app_state, key_blob) {
@@ -229,7 +301,7 @@ async fn handle_sign_request(
             PendingConsent {
                 key_id: key_id.clone(),
                 key_name: key_item.name.clone(),
-                process_name: "ssh/git".to_string(),
+                process_name: client_info.process_name.clone(),
                 host: "unknown".to_string(),
                 tx,
             },
@@ -243,7 +315,9 @@ async fn handle_sign_request(
             "consent_id": consent_id,
             "key_name": key_item.name,
             "key_fingerprint": key_item.fingerprint,
-            "process_name": "ssh/git",
+            "process_name": client_info.process_name,
+            "process_path": client_info.process_path,
+            "pid": client_info.pid,
         }),
     );
 
@@ -325,12 +399,14 @@ fn perform_sign(app_state: &AppState, key_id: &str, data: &[u8]) -> AgentRespons
             sig_blob.extend_from_slice(&(signature_bytes.len() as u32).to_be_bytes());
             sig_blob.extend_from_slice(&signature_bytes);
 
+            audit_service::log_action("agent_sign", Some(&signed_key.name), "success");
             AgentResponse::SignResponse {
                 signature_blob: sig_blob,
             }
         }
         Err(e) => {
             eprintln!("[maze-agent] sign error: {e}");
+            audit_service::log_action("agent_sign", Some(key_id), &format!("failed: {e}"));
             AgentResponse::Failure
         }
     }

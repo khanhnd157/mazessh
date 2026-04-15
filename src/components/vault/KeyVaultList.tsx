@@ -7,6 +7,7 @@ import { GenerateKeyDialog } from "./GenerateKeyDialog";
 import { ImportKeyDialog } from "./ImportKeyDialog";
 import { KeyDetailSheet } from "./KeyDetailSheet";
 import { MigrationWizard } from "@/components/migration/MigrationWizard";
+import { VaultPassphraseChange } from "./VaultPassphraseChange";
 import type { KeyState, SshKeyItemSummary } from "@/types";
 
 export function KeyVaultList() {
@@ -138,6 +139,18 @@ export function KeyVaultList() {
           ))}
         </div>
       )}
+
+      {/* Vault actions */}
+      <div className="flex items-center gap-3 pt-2 border-t border-border/50">
+        <VaultPassphraseChange />
+        <button
+          type="button"
+          onClick={() => useVaultStore.getState().lockVault()}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors text-muted-foreground"
+        >
+          Lock Vault
+        </button>
+      </div>
 
       {/* Dialogs */}
       {showGenerate && <GenerateKeyDialog onClose={() => setShowGenerate(false)} />}
