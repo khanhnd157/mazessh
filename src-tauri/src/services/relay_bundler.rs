@@ -16,7 +16,9 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::error::MazeSshError;
-use crate::models::bridge_provider::{BinaryUpdateStatus, BinaryVersion, DownloadProgress, RelayBinary};
+#[cfg(feature = "desktop")]
+use crate::models::bridge_provider::DownloadProgress;
+use crate::models::bridge_provider::{BinaryUpdateStatus, BinaryVersion, RelayBinary};
 use crate::services::profile_service;
 
 #[cfg(feature = "desktop")]

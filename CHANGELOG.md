@@ -4,6 +4,12 @@
 
 All notable changes to Maze SSH are documented in this file.
 
+## [1.1.3] - 2026-04-15
+
+### Fixed
+
+- CLI build failure on all platforms: `ssh_engine` referenced `agent_service::PIPE_NAME` without the `desktop` feature gate, causing compilation errors when building `maze-ssh-cli` with `--no-default-features`
+
 ## [1.1.2] - 2026-04-15
 
 ### SSH Key Vault (New)

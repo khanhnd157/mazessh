@@ -45,20 +45,13 @@ export function ProfileForm({ onClose, editProfile }: ProfileFormProps) {
     if (!isEdit) scanKeys();
   }, [scanKeys, isEdit]);
 
-  // Auto-fill hostname from provider (only in create mode)
+  // Auto-fill hostname + host alias from provider/name (only in create mode)
   useEffect(() => {
     if (isEdit) return;
     const host = getProviderHostname(provider);
     if (host) setHostname(host);
-  }, [provider, isEdit]);
-
-  // Auto-fill host alias from name (only in create mode)
-  useEffect(() => {
-    if (isEdit) return;
-    if (name) {
-      setHostAlias(name.toLowerCase().replace(/\s+/g, "-"));
-    }
-  }, [name, isEdit]);
+    if (name) setHostAlias(name.toLowerCase().replace(/\s+/g, "-"));
+  }, [provider, name, isEdit]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {

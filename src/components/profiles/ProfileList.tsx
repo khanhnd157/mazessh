@@ -8,14 +8,13 @@ import { ProfileForm } from "./ProfileForm";
 export function ProfileList() {
   const profiles = useProfileStore((s) => s.profiles);
   const selectedProfileId = useProfileStore((s) => s.selectedProfileId);
-  const selectProfile = useProfileStore((s) => s.selectProfile);
   const loading = useProfileStore((s) => s.loading);
   const [showForm, setShowForm] = useState(false);
 
   const handleSelect = useCallback((id: string) => {
-    selectProfile(id);
+    useProfileStore.getState().selectProfile(id);
     useUiStore.getState().setActiveTab("profiles");
-  }, [selectProfile]);
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
