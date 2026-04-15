@@ -467,6 +467,38 @@ pub fn reset_watchdog_restart_count(
     Ok(())
 }
 
+/// Validate a diagnostic fix command against the exact allowlist.
+///
+/// Uses exact-match for all fixed commands.  The only variable-content command
+/// (`rm -f <socket_path>`) is parsed and the path is validated separately by
+/// `validate_socket_path` so it cannot contain shell metacharacters or traversal.
+fn validate_diagnostic_cmd(cmd: &str) -> Result<(), MazeSshError> {
+    // Exact matches — no partial/prefix ambiguity
+    const EXACT: &[&str] = &[
+        "systemctl --user start maze-ssh-relay.service",
+        "systemctl --user restart maze-ssh-relay.service",
+        r#"nohup "$HOME"/.local/bin/maze-ssh-relay.sh &>/dev/null &"#,
+        "sudo apt install socat",
+        "sudo apt install -y socat",
+    ];
+
+    if EXACT.contains(&cmd) {
+        return Ok(());
+    }
+
+    // "rm -f <socket_path>" — validate the path strictly
+    if let Some(path) = cmd.strip_prefix("rm -f ") {
+        return validate_socket_path(path).map_err(|_| {
+            MazeSshError::BridgeError(format!("Invalid socket path in rm command: {}", path))
+        });
+    }
+
+    Err(MazeSshError::BridgeError(format!(
+        "Command not in allowlist: {}",
+        cmd
+    )))
+}
+
 /// Run an allowlisted one-click fix command inside a WSL distro.
 #[tauri::command]
 pub fn run_diagnostic_fix(
@@ -476,25 +508,11 @@ pub fn run_diagnostic_fix(
 ) -> Result<String, MazeSshError> {
     ensure_unlocked(&state)?;
 
-    let allowed_prefixes = [
-        "systemctl --user start",
-        "systemctl --user restart",
-        "nohup ~/.local/bin/maze-ssh-relay",
-        "sudo apt install",
-        "rm -f /tmp/",
-        "rm -f /run/user/",
-    ];
-
     let trimmed = cmd.trim();
     if trimmed.is_empty() {
         return Err(MazeSshError::BridgeError("Command cannot be empty".to_string()));
     }
-    if !allowed_prefixes.iter().any(|p| trimmed.starts_with(p)) {
-        return Err(MazeSshError::BridgeError(format!(
-            "Command not in allowlist: {}",
-            trimmed
-        )));
-    }
+    validate_diagnostic_cmd(trimmed)?;
 
     let result = wsl_service::run_in_wsl(&distro, &["bash", "-c", trimmed])
         .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;

@@ -43,7 +43,9 @@ pub fn build_env_file_content(profile: &SshProfile) -> String {
 
 /// Write the env file to ~/.maze-ssh/env for shell sourcing
 pub fn write_env_file(profile: &SshProfile) -> Result<(), std::io::Error> {
-    let home = dirs::home_dir().expect("Could not find home directory");
+    let home = dirs::home_dir().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "Home directory not found")
+    })?;
     let env_path = home.join(".maze-ssh").join("env");
     let content = build_env_file_content(profile);
     std::fs::write(&env_path, content)?;
@@ -52,7 +54,9 @@ pub fn write_env_file(profile: &SshProfile) -> Result<(), std::io::Error> {
 
 /// Clear the env file when deactivating
 pub fn clear_env_file() -> Result<(), std::io::Error> {
-    let home = dirs::home_dir().expect("Could not find home directory");
+    let home = dirs::home_dir().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "Home directory not found")
+    })?;
     let env_path = home.join(".maze-ssh").join("env");
     if env_path.exists() {
         std::fs::write(&env_path, "# No active profile\n")?;
@@ -173,6 +177,10 @@ pub fn agent_list_keys() -> Result<String, String> {
 
 /// Set GIT_SSH_COMMAND as a persistent user environment variable on Windows
 /// so all new terminal sessions pick it up.
+///
+/// The value is passed through a temporary process-level environment variable
+/// rather than being interpolated into the PowerShell script string, which
+/// prevents command injection via crafted key paths.
 pub fn set_user_env_git_ssh_command(profile: &SshProfile) -> Result<(), String> {
     let ssh_command = build_git_ssh_command(profile);
 
@@ -180,11 +188,10 @@ pub fn set_user_env_git_ssh_command(profile: &SshProfile) -> Result<(), String> 
         .args([
             "-NoProfile",
             "-Command",
-            &format!(
-                "[Environment]::SetEnvironmentVariable('GIT_SSH_COMMAND', '{}', 'User')",
-                ssh_command.replace("'", "''")
-            ),
+            // Read the value from the process env — never from the script string
+            "[Environment]::SetEnvironmentVariable('GIT_SSH_COMMAND', $env:_MAZE_SSH_CMD, 'User')",
         ])
+        .env("_MAZE_SSH_CMD", &ssh_command)
         .output()
         .map_err(|e| format!("Failed to set env: {}", e))?;
 

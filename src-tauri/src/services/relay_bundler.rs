@@ -14,7 +14,9 @@ use crate::services::profile_service;
 use tauri::{AppHandle, Emitter};
 
 fn bin_dir() -> PathBuf {
-    profile_service::data_dir().join("bin")
+    profile_service::data_dir()
+        .unwrap_or_else(|_| PathBuf::from(".maze-ssh"))
+        .join("bin")
 }
 
 fn version_file() -> PathBuf {

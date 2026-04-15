@@ -4,13 +4,14 @@ use std::path::PathBuf;
 use crate::error::MazeSshError;
 use crate::models::profile::DetectedKey;
 
-pub fn get_ssh_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not find home directory");
-    home.join(".ssh")
+pub fn get_ssh_dir() -> Result<PathBuf, MazeSshError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?;
+    Ok(home.join(".ssh"))
 }
 
 pub fn scan_ssh_keys() -> Result<Vec<DetectedKey>, MazeSshError> {
-    let ssh_dir = get_ssh_dir();
+    let ssh_dir = get_ssh_dir()?;
     if !ssh_dir.exists() {
         return Ok(Vec::new());
     }

@@ -6,7 +6,7 @@ use tauri::State;
 use crate::commands::security::ensure_unlocked;
 use crate::error::MazeSshError;
 use crate::models::profile::SshProfile;
-use crate::services::profile_service;
+use crate::services::{profile_service, validation};
 use crate::state::AppState;
 
 // ── Fingerprint cache (avoid re-spawning ssh-keygen for the same key) ──
@@ -38,6 +38,19 @@ pub fn import_profiles(
     for mut profile in imported {
         if inner.profiles.iter().any(|p| p.name == profile.name) {
             continue;
+        }
+        // Validate security-sensitive fields on every imported profile
+        validation::validate_hostname(&profile.hostname).map_err(|e| {
+            MazeSshError::ValidationError(format!("Profile '{}': {}", profile.name, e))
+        })?;
+        if profile.host_alias.trim().is_empty()
+            || profile.host_alias.len() > 253
+            || !profile.host_alias.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.' || c == '_')
+        {
+            return Err(MazeSshError::ValidationError(format!(
+                "Profile '{}': host alias contains invalid characters",
+                profile.name
+            )));
         }
         profile.id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().to_rfc3339();
