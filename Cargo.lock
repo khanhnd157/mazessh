@@ -2595,6 +2595,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ssh-key",
+ "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-fs",

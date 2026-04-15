@@ -466,7 +466,10 @@ fn cleanup_consent(app_state: &AppState, consent_id: &str) {
 }
 
 /// Find a vault key whose public key wire-format blob matches the request.
+/// Uses constant-time comparison to prevent timing side-channel attacks.
 fn find_key_by_blob(app_state: &AppState, target_blob: &[u8]) -> Option<String> {
+    use subtle::ConstantTimeEq;
+
     let keys = SshKeyVault::list_keys(&app_state.vault_dir).ok()?;
 
     for key_summary in &keys {
@@ -476,7 +479,9 @@ fn find_key_by_blob(app_state: &AppState, target_blob: &[u8]) -> Option<String> 
         if let Ok(key_item) = SshKeyVault::get_key(&key_summary.id, &app_state.vault_dir) {
             if let Ok(pub_key) = PublicKey::from_openssh(&key_item.public_key_openssh) {
                 if let Ok(blob) = pub_key.to_bytes() {
-                    if &blob[..] == target_blob {
+                    if blob.len() == target_blob.len()
+                        && bool::from(blob.ct_eq(target_blob))
+                    {
                         return Some(key_item.id);
                     }
                 }
