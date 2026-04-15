@@ -1,13 +1,21 @@
+import { useCallback, useState } from "react";
 import { Plus, KeyRound } from "lucide-react";
 import { useProfileStore } from "@/stores/profileStore";
 import { useUiStore } from "@/stores/uiStore";
 import { ProfileCard } from "./ProfileCard";
-import { useState } from "react";
 import { ProfileForm } from "./ProfileForm";
 
 export function ProfileList() {
-  const { profiles, selectedProfileId, selectProfile, loading } = useProfileStore();
+  const profiles = useProfileStore((s) => s.profiles);
+  const selectedProfileId = useProfileStore((s) => s.selectedProfileId);
+  const selectProfile = useProfileStore((s) => s.selectProfile);
+  const loading = useProfileStore((s) => s.loading);
   const [showForm, setShowForm] = useState(false);
+
+  const handleSelect = useCallback((id: string) => {
+    selectProfile(id);
+    useUiStore.getState().setActiveTab("profiles");
+  }, [selectProfile]);
 
   return (
     <div className="flex flex-col h-full">
@@ -30,8 +38,18 @@ export function ProfileList() {
       </div>
       <div className="flex-1 overflow-y-auto p-1.5 space-y-px">
         {loading && profiles.length === 0 && (
-          <div className="flex items-center justify-center py-10 text-muted-foreground/50">
-            <span className="text-xs">Loading...</span>
+          <div className="space-y-1 py-1" aria-hidden="true">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="px-2.5 py-2 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-muted animate-pulse shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+                    <div className="h-2.5 w-32 rounded bg-muted/60 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {!loading && profiles.length === 0 && (
@@ -54,10 +72,7 @@ export function ProfileList() {
             key={profile.id}
             profile={profile}
             isSelected={selectedProfileId === profile.id}
-            onClick={() => {
-              selectProfile(profile.id);
-              useUiStore.getState().setActiveTab("profiles");
-            }}
+            onSelect={handleSelect}
           />
         ))}
       </div>

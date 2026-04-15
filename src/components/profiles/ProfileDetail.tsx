@@ -35,9 +35,13 @@ interface ProfileDetailProps {
 }
 
 export function ProfileDetail({ profile }: ProfileDetailProps) {
-  const { activateProfile, activeProfile, testConnection } = useAppStore();
-  const { deleteProfile, fetchProfiles, selectProfile } = useProfileStore();
-  const { addLog } = useLogStore();
+  const activateProfile = useAppStore((s) => s.activateProfile);
+  const activeProfile = useAppStore((s) => s.activeProfile);
+  const testConnection = useAppStore((s) => s.testConnection);
+  const deleteProfile = useProfileStore((s) => s.deleteProfile);
+  const fetchProfiles = useProfileStore((s) => s.fetchProfiles);
+  const selectProfile = useProfileStore((s) => s.selectProfile);
+  const addLog = useLogStore((s) => s.addLog);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [testing, setTesting] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -357,10 +361,11 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
                 </span>
                 <button
                   type="button"
-                  onClick={async () => {
-                    await commands.deleteRepoMapping(m.id);
-                    setProfileMappings((prev) => prev.filter((p) => p.id !== m.id));
-                    toast.success(`Removed ${m.repo_name}`);
+                  onClick={() => {
+                    commands.deleteRepoMapping(m.id).then(() => {
+                      setProfileMappings((prev) => prev.filter((p) => p.id !== m.id));
+                      toast.success(`Removed ${m.repo_name}`);
+                    }).catch(() => toast.error("Failed to remove mapping"));
                   }}
                   title="Remove"
                   className="text-muted-foreground/30 hover:text-destructive opacity-0 group-hover:opacity-100 transition-all shrink-0"

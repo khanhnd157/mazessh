@@ -5,7 +5,8 @@ import { RepoMappingCard } from "./RepoMappingCard";
 import { AddRepoMappingDialog } from "./AddRepoMappingDialog";
 
 export function RepoMappingList() {
-  const { mappings, loading } = useRepoMappingStore();
+  const mappings = useRepoMappingStore((s) => s.mappings);
+  const loading = useRepoMappingStore((s) => s.loading);
   const [showAdd, setShowAdd] = useState(false);
 
   useEffect(() => {
@@ -41,7 +42,17 @@ export function RepoMappingList() {
 
       {/* List */}
       {loading && mappings.length === 0 && (
-        <p className="text-sm text-muted-foreground py-4">Loading...</p>
+        <div className="space-y-2" aria-hidden="true">
+          {[1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-lg bg-secondary/30">
+              <div className="w-9 h-9 rounded-lg bg-muted animate-pulse shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 w-40 rounded bg-muted animate-pulse" />
+                <div className="h-2.5 w-56 rounded bg-muted/60 animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {!loading && mappings.length === 0 && (

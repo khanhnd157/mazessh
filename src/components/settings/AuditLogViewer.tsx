@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Shield, RefreshCw } from "lucide-react";
 import { commands } from "@/lib/tauri-commands";
 import type { AuditEntry } from "@/types";
@@ -45,8 +45,10 @@ export function AuditLogViewer() {
   }, []);
 
   // Show distro/provider columns when in bridge filter or when any row has them
-  const showBridgeCols =
-    filter === "bridge" || logs.some((l) => l.distro != null || l.provider != null);
+  const showBridgeCols = useMemo(
+    () => filter === "bridge" || logs.some((l) => l.distro != null || l.provider != null),
+    [filter, logs],
+  );
 
   return (
     <div className="space-y-4">
@@ -85,6 +87,19 @@ export function AuditLogViewer() {
         </div>
       </div>
 
+      {logs.length === 0 && loading && (
+        <div className="rounded-xl border overflow-hidden" aria-hidden="true">
+          <div className="bg-secondary/50 h-8" />
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-3 py-2 border-t">
+              <div className="h-3 w-28 rounded bg-muted animate-pulse" />
+              <div className="h-5 w-20 rounded bg-muted/60 animate-pulse" />
+              <div className="h-3 w-24 rounded bg-muted/40 animate-pulse" />
+              <div className="h-3 flex-1 rounded bg-muted/30 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      )}
       {logs.length === 0 && !loading && (
         <p className="text-sm text-muted-foreground py-4">No audit entries yet.</p>
       )}
@@ -107,8 +122,8 @@ export function AuditLogViewer() {
               </tr>
             </thead>
             <tbody>
-              {logs.map((log, i) => (
-                <tr key={i} className="border-t hover:bg-accent/30">
+              {logs.map((log) => (
+                <tr key={`${log.timestamp}-${log.action}-${log.result}`} className="border-t hover:bg-accent/30">
                   <td className="px-3 py-2 text-muted-foreground font-mono whitespace-nowrap">
                     {new Date(log.timestamp).toLocaleString()}
                   </td>

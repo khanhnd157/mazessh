@@ -97,18 +97,22 @@ use super::security::ensure_unlocked;
 
 /// Get full bridge overview: WSL availability, provider status, all distro statuses
 #[tauri::command]
-pub fn get_bridge_overview(
+pub async fn get_bridge_overview(
     state: State<'_, AppState>,
 ) -> Result<BridgeOverview, MazeSshError> {
     ensure_unlocked(&state)?;
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    let mut overview = bridge_service::get_bridge_overview(&config);
-    // Overlay watchdog restart counts from in-memory state
-    if let Ok(watchdog) = state.relay_watchdog_state.lock() {
-        for distro_status in overview.distros.iter_mut() {
-            if let Some(entry) = watchdog.get(&distro_status.distro_name) {
-                distro_status.watchdog_restart_count = entry.restart_count;
-            }
+    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?.clone();
+    let watchdog: std::collections::HashMap<String, u8> = state
+        .relay_watchdog_state
+        .lock()
+        .map(|w| w.iter().map(|(k, v)| (k.clone(), v.restart_count)).collect())
+        .unwrap_or_default();
+    let mut overview = tokio::task::spawn_blocking(move || bridge_service::get_bridge_overview(&config))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Overview task panicked".to_string()))?;
+    for distro_status in overview.distros.iter_mut() {
+        if let Some(&count) = watchdog.get(&distro_status.distro_name) {
+            distro_status.watchdog_restart_count = count;
         }
     }
     Ok(overview)
@@ -116,144 +120,161 @@ pub fn get_bridge_overview(
 
 /// List detected WSL distributions (lightweight, no health checks)
 #[tauri::command]
-pub fn list_wsl_distros(
+pub async fn list_wsl_distros(
     state: State<'_, AppState>,
 ) -> Result<Vec<WslDistro>, MazeSshError> {
     ensure_unlocked(&state)?;
-    wsl_service::list_distros()
+    tokio::task::spawn_blocking(wsl_service::list_distros)
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Distro list task panicked".to_string()))?
 }
 
 /// Bootstrap bridge relay into a specific WSL distro
 #[tauri::command]
-pub fn bootstrap_bridge(
+pub async fn bootstrap_bridge(
     distro: String,
     relay_mode: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<DistroBridgeStatus, MazeSshError> {
     ensure_unlocked(&state)?;
-    let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
-
     let parsed_relay_mode = match relay_mode.as_deref() {
         Some("daemon") => RelayMode::Daemon,
         _ => RelayMode::Systemd,
     };
-
-    // Ensure distro entry exists in config with default provider
-    if !config.distros.iter().any(|d| d.distro_name == distro) {
-        config.distros.push(DistroBridgeConfig {
-            distro_name: distro.clone(),
-            enabled: true,
-            socket_path: None,
-            provider: BridgeProvider::default(),
-            allow_agent_forwarding: false,
-            relay_mode: parsed_relay_mode,
-            auto_restart: true,
-            max_restarts: 5,
-        });
-    } else {
-        // Mark as enabled and update relay_mode
-        if let Some(d) = config.distros.iter_mut().find(|d| d.distro_name == distro) {
+    // Fast in-memory config update under write lock
+    let (config, provider_name) = {
+        let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
+        if !config.distros.iter().any(|d| d.distro_name == distro) {
+            config.distros.push(DistroBridgeConfig {
+                distro_name: distro.clone(),
+                enabled: true,
+                socket_path: None,
+                provider: BridgeProvider::default(),
+                allow_agent_forwarding: false,
+                relay_mode: parsed_relay_mode,
+                auto_restart: true,
+                max_restarts: 5,
+            });
+        } else if let Some(d) = config.distros.iter_mut().find(|d| d.distro_name == distro) {
             d.enabled = true;
             d.relay_mode = parsed_relay_mode;
         }
-    }
-
-    let provider_name = config.distros.iter()
-        .find(|d| d.distro_name == distro)
-        .map(|d| d.provider.display_name().to_string())
-        .unwrap_or_default();
-
-    let result = bridge_service::bootstrap_distro(&distro, &config)?;
-    bridge_service::save_bridge_config(&config)?;
-
+        let provider_name = config.distros.iter()
+            .find(|d| d.distro_name == distro)
+            .map(|d| d.provider.display_name().to_string())
+            .unwrap_or_default();
+        (config.clone(), provider_name)
+    }; // write lock released
+    let distro_clone = distro.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<DistroBridgeStatus, MazeSshError> {
+        let status = bridge_service::bootstrap_distro(&distro_clone, &config)?;
+        bridge_service::save_bridge_config(&config)?;
+        Ok(status)
+    })
+    .await
+    .map_err(|_| MazeSshError::BridgeError("Bootstrap task panicked".to_string()))??;
     log_bridge_audit("bootstrap", &distro, &provider_name, "Bridge setup completed");
-
     Ok(result)
 }
 
 /// Remove bridge from a WSL distro
 #[tauri::command]
-pub fn teardown_bridge(
+pub async fn teardown_bridge(
     distro: String,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-
     let config_snap = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?.clone();
     let provider_name = config_snap.distros.iter()
         .find(|d| d.distro_name == distro)
         .map(|d| d.provider.display_name().to_string())
         .unwrap_or_default();
-
-    bridge_service::teardown_distro(&distro, &config_snap)?;
-
+    let distro_clone = distro.clone();
+    tokio::task::spawn_blocking(move || bridge_service::teardown_distro(&distro_clone, &config_snap))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Teardown task panicked".to_string()))??;
+    // Update config and save after blocking work completes
     let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
     config.distros.retain(|d| d.distro_name != distro);
     bridge_service::save_bridge_config(&config)?;
-
     log_bridge_audit("teardown", &distro, &provider_name, "Bridge removed");
-
     Ok(())
 }
 
 /// Start the relay service in a WSL distro
 #[tauri::command]
-pub fn start_bridge_relay(
+pub async fn start_bridge_relay(
     distro: String,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    let relay_mode = config.distros.iter().find(|d| d.distro_name == distro).map(|d| d.relay_mode.clone()).unwrap_or_default();
-    drop(config);
-    bridge_service::start_relay(&distro, &relay_mode)?;
+    let relay_mode = {
+        let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
+        config.distros.iter().find(|d| d.distro_name == distro).map(|d| d.relay_mode.clone()).unwrap_or_default()
+    };
+    let distro_clone = distro.clone();
+    tokio::task::spawn_blocking(move || bridge_service::start_relay(&distro_clone, &relay_mode))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Start relay task panicked".to_string()))??;
     log_bridge_audit("start", &distro, "", "Relay started");
     Ok(())
 }
 
 /// Stop the relay service in a WSL distro
 #[tauri::command]
-pub fn stop_bridge_relay(
+pub async fn stop_bridge_relay(
     distro: String,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    let relay_mode = config.distros.iter().find(|d| d.distro_name == distro).map(|d| d.relay_mode.clone()).unwrap_or_default();
-    drop(config);
-    bridge_service::stop_relay(&distro, &relay_mode)?;
+    let relay_mode = {
+        let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
+        config.distros.iter().find(|d| d.distro_name == distro).map(|d| d.relay_mode.clone()).unwrap_or_default()
+    };
+    let distro_clone = distro.clone();
+    tokio::task::spawn_blocking(move || bridge_service::stop_relay(&distro_clone, &relay_mode))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Stop relay task panicked".to_string()))??;
     log_bridge_audit("stop", &distro, "", "Relay stopped");
     Ok(())
 }
 
 /// Restart the relay service in a WSL distro
 #[tauri::command]
-pub fn restart_bridge_relay(
+pub async fn restart_bridge_relay(
     distro: String,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    let relay_mode = config.distros.iter().find(|d| d.distro_name == distro).map(|d| d.relay_mode.clone()).unwrap_or_default();
-    drop(config);
-    bridge_service::restart_relay(&distro, &relay_mode)?;
+    let relay_mode = {
+        let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
+        config.distros.iter().find(|d| d.distro_name == distro).map(|d| d.relay_mode.clone()).unwrap_or_default()
+    };
+    let distro_clone = distro.clone();
+    tokio::task::spawn_blocking(move || bridge_service::restart_relay(&distro_clone, &relay_mode))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Restart relay task panicked".to_string()))??;
     log_bridge_audit("restart", &distro, "", "Relay restarted");
     Ok(())
 }
 
 /// Get detailed bridge status for one distro
 #[tauri::command]
-pub fn get_distro_bridge_status(
+pub async fn get_distro_bridge_status(
     distro: String,
     state: State<'_, AppState>,
 ) -> Result<DistroBridgeStatus, MazeSshError> {
     ensure_unlocked(&state)?;
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    let mut status = bridge_service::get_distro_status(&distro, &config);
-    if let Ok(watchdog) = state.relay_watchdog_state.lock() {
-        if let Some(entry) = watchdog.get(&distro) {
-            status.watchdog_restart_count = entry.restart_count;
-        }
+    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?.clone();
+    let watchdog_count: Option<u8> = state.relay_watchdog_state.lock()
+        .ok()
+        .and_then(|w| w.get(&distro).map(|e| e.restart_count));
+    let distro_clone = distro.clone();
+    let mut status = tokio::task::spawn_blocking(move || bridge_service::get_distro_status(&distro_clone, &config))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Status task panicked".to_string()))?;
+    if let Some(count) = watchdog_count {
+        status.watchdog_restart_count = count;
     }
     Ok(status)
 }
@@ -352,33 +373,40 @@ pub fn get_recommended_provider(
 
 /// Run step-by-step bridge diagnostics for a distro
 #[tauri::command]
-pub fn run_bridge_diagnostics(
+pub async fn run_bridge_diagnostics(
     distro: String,
     state: State<'_, AppState>,
 ) -> Result<DiagnosticsResult, MazeSshError> {
     ensure_unlocked(&state)?;
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    Ok(bridge_service::run_diagnostics(&distro, &config))
+    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?.clone();
+    tokio::task::spawn_blocking(move || Ok(bridge_service::run_diagnostics(&distro, &config)))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Diagnostics task panicked".to_string()))?
 }
 
 /// Fetch recent relay service journal logs from a WSL distro
 #[tauri::command]
-pub fn get_relay_logs(
+pub async fn get_relay_logs(
     distro: String,
     lines: u32,
     state: State<'_, AppState>,
 ) -> Result<String, MazeSshError> {
     ensure_unlocked(&state)?;
-    bridge_service::get_relay_logs(&distro, lines)
+    tokio::task::spawn_blocking(move || bridge_service::get_relay_logs(&distro, lines))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Log fetch task panicked".to_string()))?
 }
 
 /// Get installed relay binary versions
 #[tauri::command]
-pub fn get_relay_binary_versions(
+pub async fn get_relay_binary_versions(
     state: State<'_, AppState>,
 ) -> Result<BinaryVersion, MazeSshError> {
     ensure_unlocked(&state)?;
-    Ok(relay_bundler::get_installed_versions())
+    let versions = tokio::task::spawn_blocking(relay_bundler::get_installed_versions)
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Version check task panicked".to_string()))?;
+    Ok(versions)
 }
 
 /// Download a relay binary from GitHub releases (emits binary-download-progress events)
@@ -686,33 +714,27 @@ pub fn import_bridge_config(
 /// Bootstrap the relay into all running WSL2 distros that don't have it installed yet.
 /// Continues on per-distro failures; saves config once at the end.
 #[tauri::command]
-pub fn bootstrap_all_distros(
+pub async fn bootstrap_all_distros(
     state: State<'_, AppState>,
 ) -> Result<Vec<BootstrapAllResult>, MazeSshError> {
     ensure_unlocked(&state)?;
-
-    let all_distros = wsl_service::list_distros()?;
+    // Step 1: list distros in blocking task
+    let all_distros = tokio::task::spawn_blocking(wsl_service::list_distros)
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Distro list task panicked".to_string()))??;
     let candidates: Vec<_> = all_distros
         .into_iter()
         .filter(|d| d.version == 2 && d.state.eq_ignore_ascii_case("Running"))
         .collect();
-
-    let mut results: Vec<BootstrapAllResult> = Vec::new();
-
-    for distro_info in candidates {
-        let distro = distro_info.name.clone();
-
-        let relay_installed = wsl_service::wsl_file_exists(
-            &distro,
-            &format!("~/{}", crate::models::bridge::RELAY_SCRIPT_PATH),
-        );
-        if relay_installed {
-            continue;
-        }
-
-        {
-            let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
-            if !config.distros.iter().any(|d| d.distro_name == distro) {
+    if candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Step 2: update config in-memory (fast, no I/O)
+    {
+        let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
+        for distro_info in &candidates {
+            let distro = &distro_info.name;
+            if !config.distros.iter().any(|d| &d.distro_name == distro) {
                 config.distros.push(DistroBridgeConfig {
                     distro_name: distro.clone(),
                     enabled: true,
@@ -723,30 +745,40 @@ pub fn bootstrap_all_distros(
                     auto_restart: true,
                     max_restarts: 5,
                 });
-            } else if let Some(d) = config.distros.iter_mut().find(|d| d.distro_name == distro) {
+            } else if let Some(d) = config.distros.iter_mut().find(|d| &d.distro_name == distro) {
                 d.enabled = true;
             }
         }
-
-        let bootstrap_result = {
-            let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-            bridge_service::bootstrap_distro(&distro, &config)
-        };
-
-        match bootstrap_result {
-            Ok(_) => {
-                log_bridge_audit("bootstrap_all", &distro, "", "Bridge setup completed");
-                results.push(BootstrapAllResult { distro, success: true, error: None });
+    }
+    // Step 3: clone config for blocking work
+    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?.clone();
+    // Step 4: do all WSL blocking work in one spawn_blocking
+    let results = tokio::task::spawn_blocking(move || -> Result<Vec<BootstrapAllResult>, MazeSshError> {
+        let mut results: Vec<BootstrapAllResult> = Vec::new();
+        for distro_info in candidates {
+            let distro = distro_info.name.clone();
+            let relay_installed = wsl_service::wsl_file_exists(
+                &distro,
+                &format!("~/{}", crate::models::bridge::RELAY_SCRIPT_PATH),
+            );
+            if relay_installed {
+                continue;
             }
-            Err(e) => {
-                results.push(BootstrapAllResult { distro, success: false, error: Some(e.to_string()) });
+            match bridge_service::bootstrap_distro(&distro, &config) {
+                Ok(_) => results.push(BootstrapAllResult { distro, success: true, error: None }),
+                Err(e) => results.push(BootstrapAllResult { distro, success: false, error: Some(e.to_string()) }),
             }
         }
+        bridge_service::save_bridge_config(&config)?;
+        Ok(results)
+    })
+    .await
+    .map_err(|_| MazeSshError::BridgeError("Bootstrap-all task panicked".to_string()))??;
+    for r in &results {
+        if r.success {
+            log_bridge_audit("bootstrap_all", &r.distro, "", "Bridge setup completed");
+        }
     }
-
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    bridge_service::save_bridge_config(&config)?;
-
     Ok(results)
 }
 
@@ -755,13 +787,16 @@ pub fn bootstrap_all_distros(
 /// Rewrite the relay script from the current config and restart the relay service in-place.
 /// No teardown required — use this after changing socket path without re-bootstrapping.
 #[tauri::command]
-pub fn refresh_relay_script(
+pub async fn refresh_relay_script(
     distro: String,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
-    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?;
-    bridge_service::refresh_relay_script(&distro, &config)?;
+    let config = state.bridge.read().map_err(|_| MazeSshError::StateLockError)?.clone();
+    let distro_clone = distro.clone();
+    tokio::task::spawn_blocking(move || bridge_service::refresh_relay_script(&distro_clone, &config))
+        .await
+        .map_err(|_| MazeSshError::BridgeError("Refresh task panicked".to_string()))??;
     log_bridge_audit("relay_refresh", &distro, "", "Relay script refreshed in-place");
     Ok(())
 }

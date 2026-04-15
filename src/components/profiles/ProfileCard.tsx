@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Check } from "lucide-react";
 import type { ProfileSummary } from "@/types";
 import { getProviderLabel } from "@/types";
@@ -6,14 +7,14 @@ import { ProviderIcon } from "./ProviderIcon";
 interface ProfileCardProps {
   profile: ProfileSummary;
   isSelected: boolean;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }
 
-export function ProfileCard({ profile, isSelected, onClick }: ProfileCardProps) {
+export const ProfileCard = memo(function ProfileCard({ profile, isSelected, onSelect }: ProfileCardProps) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => onSelect(profile.id)}
       className={`group w-full text-left px-2.5 py-2 rounded-lg transition-all duration-100 ${
         isSelected
           ? "bg-primary/12 ring-1 ring-primary/20"
@@ -44,4 +45,4 @@ export function ProfileCard({ profile, isSelected, onClick }: ProfileCardProps) 
       </div>
     </button>
   );
-}
+});

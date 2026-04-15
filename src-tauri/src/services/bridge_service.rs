@@ -438,19 +438,18 @@ pub fn restart_relay(distro: &str, relay_mode: &RelayMode) -> Result<(), MazeSsh
 
 // ── Health checks ──
 
-/// Get full bridge status for a single distro
-pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeStatus {
+/// Inner implementation that works with pre-fetched distro state.
+/// Called by `get_distro_status` (fetches its own distro info) and by
+/// `get_bridge_overview` (passes info from a single shared `list_distros` call).
+fn get_distro_status_inner(
+    distro: &str,
+    config: &BridgeConfig,
+    wsl_version: u8,
+    distro_running: bool,
+) -> DistroBridgeStatus {
     let socket_path = resolve_socket_path(config, distro);
     let provider = resolve_provider(config, distro);
     let relay_mode = resolve_relay_mode(config, distro);
-
-    let (wsl_version, distro_running) = match wsl_service::list_distros() {
-        Ok(distros) => match distros.iter().find(|d| d.name == distro) {
-            Some(d) => (d.version, d.state == "Running"),
-            None => (0, false),
-        },
-        Err(_) => (0, false),
-    };
 
     let enabled = config.distros.iter().any(|d| d.distro_name == distro && d.enabled);
 
@@ -580,6 +579,21 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
     }
 }
 
+/// Get full bridge status for a single distro.
+/// Calls `list_distros()` internally to resolve the distro's WSL version and
+/// running state. Use `get_bridge_overview` (which calls `list_distros` once)
+/// when querying multiple distros to avoid redundant WSL invocations.
+pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeStatus {
+    let (wsl_version, distro_running) = match wsl_service::list_distros() {
+        Ok(distros) => match distros.iter().find(|d| d.name == distro) {
+            Some(d) => (d.version, d.state == "Running"),
+            None => (0, false),
+        },
+        Err(_) => (0, false),
+    };
+    get_distro_status_inner(distro, config, wsl_version, distro_running)
+}
+
 /// Get full bridge overview across all WSL2 distros
 pub fn get_bridge_overview(config: &BridgeConfig) -> BridgeOverview {
     let wsl_available = wsl_service::is_wsl_available();
@@ -590,11 +604,34 @@ pub fn get_bridge_overview(config: &BridgeConfig) -> BridgeOverview {
 
     let distros = if wsl_available {
         match wsl_service::list_distros() {
-            Ok(all) => all
-                .iter()
-                .filter(|d| d.version == 2)
-                .map(|d| get_distro_status(&d.name, config))
-                .collect(),
+            Ok(all) => {
+                // Check each WSL2 distro in parallel to avoid sequential blocking.
+                // Each distro check runs many WSL commands; doing them concurrently
+                // cuts wall-clock time from O(N*cmds) to O(cmds).
+                let wsl2: Vec<_> = all.into_iter().filter(|d| d.version == 2).collect();
+                let config_arc = std::sync::Arc::new(config.clone());
+                let handles: Vec<_> = wsl2
+                    .into_iter()
+                    .map(|d| {
+                        let cfg = std::sync::Arc::clone(&config_arc);
+                        let distro_name = d.name.clone();
+                        let wsl_version = d.version;
+                        let distro_running = d.state == "Running";
+                        std::thread::spawn(move || {
+                            get_distro_status_inner(
+                                &distro_name,
+                                &cfg,
+                                wsl_version,
+                                distro_running,
+                            )
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .filter_map(|h| h.join().ok())
+                    .collect()
+            }
             Err(_) => Vec::new(),
         }
     } else {
