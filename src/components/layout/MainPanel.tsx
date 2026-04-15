@@ -3,7 +3,7 @@ import { useProfileStore } from "@/stores/profileStore";
 import { ProfileDetail } from "@/components/profiles/ProfileDetail";
 
 export function MainPanel() {
-  const { selectedProfile } = useProfileStore();
+  const selectedProfile = useProfileStore((s) => s.selectedProfile);
 
   if (!selectedProfile) {
     return (

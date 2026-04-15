@@ -23,8 +23,13 @@ const AGENT_TIMEOUT_OPTIONS = [
 ];
 
 export function SecuritySettingsPanel() {
-  const { pinIsSet, settings, fetchSettings, updateSettings, setupPin, changePin, removePin } =
-    useSecurityStore();
+  const pinIsSet = useSecurityStore((s) => s.pinIsSet);
+  const settings = useSecurityStore((s) => s.settings);
+  const fetchSettings = useSecurityStore((s) => s.fetchSettings);
+  const updateSettings = useSecurityStore((s) => s.updateSettings);
+  const setupPin = useSecurityStore((s) => s.setupPin);
+  const changePin = useSecurityStore((s) => s.changePin);
+  const removePin = useSecurityStore((s) => s.removePin);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [pinAction, setPinAction] = useState<"setup" | "change" | "remove" | null>(null);
   const [pinInput, setPinInput] = useState("");

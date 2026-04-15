@@ -1,5 +1,6 @@
+import { memo } from "react";
 import { Trash2, Info, AlertTriangle, XCircle } from "lucide-react";
-import { useLogStore } from "@/stores/logStore";
+import { useLogStore, type LogEntry } from "@/stores/logStore";
 
 const levelConfig = {
   info: { color: "text-primary/70", icon: Info },
@@ -7,8 +8,28 @@ const levelConfig = {
   error: { color: "text-destructive", icon: XCircle },
 };
 
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+const LogRow = memo(function LogRow({ log }: { log: LogEntry }) {
+  const config = levelConfig[log.level];
+  const Icon = config.icon;
+  return (
+    <div className="flex items-start gap-1.5 py-px">
+      <span className="text-muted-foreground/30 shrink-0 tabular-nums">
+        {formatTime(log.timestamp)}
+      </span>
+      <Icon size={10} className={`${config.color} shrink-0 mt-px`} />
+      <span className={`${config.color} shrink-0 font-medium`}>{log.action}</span>
+      <span className="text-foreground/50 truncate">{log.detail}</span>
+    </div>
+  );
+});
+
 export function ActivityLog() {
-  const { logs, clearLogs } = useLogStore();
+  const logs = useLogStore((s) => s.logs);
+  const clearLogs = useLogStore((s) => s.clearLogs);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -33,20 +54,9 @@ export function ActivityLog() {
         {logs.length === 0 && (
           <p className="text-muted-foreground/30 py-2">No activity</p>
         )}
-        {logs.map((log) => {
-          const config = levelConfig[log.level];
-          const Icon = config.icon;
-          return (
-            <div key={log.id} className="flex items-start gap-1.5 py-px">
-              <span className="text-muted-foreground/30 shrink-0 tabular-nums">
-                {new Date(log.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              </span>
-              <Icon size={10} className={`${config.color} shrink-0 mt-px`} />
-              <span className={`${config.color} shrink-0 font-medium`}>{log.action}</span>
-              <span className="text-foreground/50 truncate">{log.detail}</span>
-            </div>
-          );
-        })}
+        {logs.map((log) => (
+          <LogRow key={log.id} log={log} />
+        ))}
       </div>
     </div>
   );
