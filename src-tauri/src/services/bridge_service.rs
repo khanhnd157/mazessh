@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::error::MazeSshError;
 use crate::models::bridge::*;
 use crate::models::bridge_provider::*;
+use crate::services::bridge_history_service as history;
 use crate::services::profile_service;
 use crate::services::provider_health;
 use crate::services::wsl_service;
@@ -332,6 +333,7 @@ pub fn bootstrap_distro(
     // Brief pause for service to create socket
     std::thread::sleep(std::time::Duration::from_millis(500));
 
+    history::append_event(distro, BridgeHistoryEventKind::BridgeBootstrapped, Some(provider.display_name().to_string()));
     Ok(get_distro_status(distro, config))
 }
 
@@ -359,6 +361,7 @@ pub fn teardown_distro(distro: &str, config: &BridgeConfig) -> Result<(), MazeSs
         &["rm", "-f", &format!("~/{}", RELAY_SCRIPT_PATH), &format!("~/{}", SYSTEMD_UNIT_PATH)],
     );
     remove_shell_env(distro)?;
+    history::append_event(distro, BridgeHistoryEventKind::BridgeTeardown, None);
     Ok(())
 }
 
@@ -397,6 +400,7 @@ pub fn start_relay(distro: &str, relay_mode: &RelayMode) -> Result<(), MazeSshEr
             }
         }
     }
+    history::append_event(distro, BridgeHistoryEventKind::BridgeStarted, None);
     Ok(())
 }
 
@@ -421,6 +425,7 @@ pub fn stop_relay(distro: &str, relay_mode: &RelayMode) -> Result<(), MazeSshErr
             );
         }
     }
+    history::append_event(distro, BridgeHistoryEventKind::BridgeStopped, None);
     Ok(())
 }
 
@@ -452,6 +457,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
     let distro_config = config.distros.iter().find(|d| d.distro_name == distro);
     let allow_agent_forwarding = distro_config.map(|d| d.allow_agent_forwarding).unwrap_or(false);
     let auto_restart = distro_config.map(|d| d.auto_restart).unwrap_or(true);
+    let max_restarts = distro_config.map(|d| d.max_restarts).unwrap_or(5);
     // watchdog_restart_count comes from in-memory watchdog state; we pass 0 here since
     // get_distro_status doesn't have access to AppState. Commands that call this function
     // can optionally overlay this value from state.relay_watchdog_state.
@@ -475,6 +481,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
             auto_restart,
             watchdog_restart_count,
             relay_script_stale: false,
+            max_restarts,
             detected_shells: Vec::new(),
             socket_path: socket_path.clone(),
             error: Some("Distro is not running".to_string()),
@@ -566,6 +573,7 @@ pub fn get_distro_status(distro: &str, config: &BridgeConfig) -> DistroBridgeSta
         auto_restart,
         watchdog_restart_count,
         relay_script_stale,
+        max_restarts,
         detected_shells,
         socket_path,
         error,
@@ -974,6 +982,11 @@ pub async fn poll_and_restart_relays(app: &tauri::AppHandle) {
                 // Nothing to do
             }
             WatchdogAction::AlreadyPaused => {
+                history::append_event(
+                    &distro,
+                    BridgeHistoryEventKind::WatchdogPaused,
+                    Some(format!("after {} attempts", max_restarts)),
+                );
                 // Emit paused event so in-app UI can show the badge
                 let _ = app.emit("relay-restart-failed", serde_json::json!({
                     "distro": distro,
@@ -1010,6 +1023,17 @@ pub async fn poll_and_restart_relays(app: &tauri::AppHandle) {
                 .await;
 
                 if restarted.map(|r| r.is_ok()).unwrap_or(false) {
+                    let count = {
+                        state.relay_watchdog_state.lock()
+                            .ok()
+                            .and_then(|w| w.get(&distro).map(|e| e.restart_count))
+                            .unwrap_or(0)
+                    };
+                    history::append_event(
+                        &distro,
+                        BridgeHistoryEventKind::WatchdogRestart,
+                        Some(format!("attempt {}", count)),
+                    );
                     let _ = app.emit("relay-restarted", distro.clone());
                     // Update was_active to true on success
                     if let Ok(mut w) = state.relay_watchdog_state.lock() {
@@ -1106,6 +1130,7 @@ pub fn refresh_relay_script(distro: &str, config: &BridgeConfig) -> Result<(), M
         }
     }
 
+    history::append_event(distro, BridgeHistoryEventKind::RelayRefreshed, None);
     Ok(())
 }
 
@@ -1274,6 +1299,67 @@ pub fn test_ssh_via_bridge(
 
 fn remove_marker_block(content: &str) -> String {
     remove_block_between(content, BRIDGE_MARKER_BEGIN, BRIDGE_MARKER_END)
+}
+
+// ── Phase 8: Windows SSH config auto-population ──
+
+/// Generate the Host block text for the Windows-side `~/.ssh/config`.
+///
+/// The alias is `maze-wsl-<distro>` (lowercase, spaces → hyphens).
+/// The `ProxyCommand` uses `wsl -d <distro>` so Windows SSH clients can
+/// connect through the WSL-hosted bridge socket.
+fn generate_windows_wsl_host_block(distro: &str, config: &BridgeConfig) -> String {
+    let socket_path = resolve_socket_path(config, distro);
+    let alias = format!("maze-wsl-{}", distro.to_lowercase().replace(' ', "-"));
+    let begin = format!("# >>> maze-ssh-wsl-{distro} >>>");
+    let end = format!("# <<< maze-ssh-wsl-{distro} <<<");
+    format!(
+        "{begin}\nHost {alias}\n    ProxyCommand wsl -d {distro} -- socat - UNIX-CONNECT:{socket_path}\n    StrictHostKeyChecking accept-new\n{end}\n",
+    )
+}
+
+/// Return a preview of the Windows SSH config Host block without writing it.
+pub fn preview_windows_ssh_host(distro: &str, config: &BridgeConfig) -> String {
+    generate_windows_wsl_host_block(distro, config)
+}
+
+/// Write (or refresh) the Host block in `~/.ssh/config` on the Windows host.
+/// Uses marker-based idempotent injection — safe to call multiple times.
+pub fn upsert_windows_ssh_host(distro: &str, config: &BridgeConfig) -> Result<(), MazeSshError> {
+    let config_path = windows_ssh_config_path()?;
+    if let Some(dir) = config_path.parent() {
+        if !dir.exists() {
+            std::fs::create_dir_all(dir)?;
+        }
+    }
+    let current = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let begin = format!("# >>> maze-ssh-wsl-{distro} >>>");
+    let end = format!("# <<< maze-ssh-wsl-{distro} <<<");
+    let cleaned = remove_block_between(&current, &begin, &end);
+    let block = generate_windows_wsl_host_block(distro, config);
+    let new_content = format!("{}\n{}", cleaned.trim_end(), block);
+    profile_service::atomic_write(&config_path, &new_content)?;
+    Ok(())
+}
+
+/// Remove the Host block from `~/.ssh/config` on the Windows host.
+pub fn remove_windows_ssh_host(distro: &str) -> Result<(), MazeSshError> {
+    let config_path = windows_ssh_config_path()?;
+    if !config_path.exists() {
+        return Ok(());
+    }
+    let current = std::fs::read_to_string(&config_path)?;
+    let begin = format!("# >>> maze-ssh-wsl-{distro} >>>");
+    let end = format!("# <<< maze-ssh-wsl-{distro} <<<");
+    let cleaned = remove_block_between(&current, &begin, &end);
+    profile_service::atomic_write(&config_path, &cleaned)?;
+    Ok(())
+}
+
+fn windows_ssh_config_path() -> Result<std::path::PathBuf, MazeSshError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?;
+    Ok(home.join(".ssh").join("config"))
 }
 
 #[cfg(test)]

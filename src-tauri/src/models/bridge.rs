@@ -104,6 +104,9 @@ pub struct DistroBridgeStatus {
     /// True if the installed relay script differs from what the current config would generate
     #[serde(default)]
     pub relay_script_stale: bool,
+    /// Max watchdog restarts before pausing (mirrors distro config, default 5)
+    #[serde(default = "default_max_restarts")]
+    pub max_restarts: u8,
     /// Shells detected as installed in the distro
     #[serde(default)]
     pub detected_shells: Vec<ShellProfile>,
@@ -179,6 +182,32 @@ pub struct BridgeOverview {
     /// Which relay binaries are installed
     pub relay_binaries: Vec<RelayBinaryStatus>,
     pub distros: Vec<DistroBridgeStatus>,
+}
+
+// ── Phase 8: Health history ring buffer ──
+
+/// One entry in the per-distro health history ring buffer
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BridgeHistoryEvent {
+    /// RFC-3339 UTC timestamp
+    pub timestamp: String,
+    /// Event discriminant
+    pub event: BridgeHistoryEventKind,
+    /// Optional context (restart count, error text, provider name, …)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BridgeHistoryEventKind {
+    BridgeStarted,
+    BridgeStopped,
+    WatchdogRestart,
+    WatchdogPaused,
+    RelayRefreshed,
+    BridgeBootstrapped,
+    BridgeTeardown,
 }
 
 // ── Constants ──

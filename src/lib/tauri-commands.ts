@@ -5,6 +5,7 @@ import type {
   BinaryUpdateStatus,
   BinaryVersion,
   BootstrapAllResult,
+  BridgeHistoryEvent,
   BridgeOverview,
   BridgeProvider,
   ConfigBackup,
@@ -198,4 +199,16 @@ export const commands = {
     invoke<void>("remove_shell_injection", { distro, rcFile }),
   testSshViaBridge: (distro: string, host: string, user: string, port: number) =>
     invoke<SshHostTestResult>("test_ssh_via_bridge", { distro, host, user, port }),
+
+  // Phase 8
+  getBridgeHistory: (distro: string, limit: number) =>
+    invoke<BridgeHistoryEvent[]>("get_bridge_history", { distro, limit }),
+  setDistroMaxRestarts: (distro: string, maxRestarts: number) =>
+    invoke<void>("set_distro_max_restarts", { distro, maxRestarts }),
+  previewWindowsSshHost: (distro: string) =>
+    invoke<string>("preview_windows_ssh_host", { distro }),
+  upsertWindowsSshHost: (distro: string) =>
+    invoke<void>("upsert_windows_ssh_host", { distro }),
+  removeWindowsSshHost: (distro: string) =>
+    invoke<void>("remove_windows_ssh_host", { distro }),
 };
