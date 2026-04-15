@@ -12,12 +12,14 @@ export function VaultSetupPrompt() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 100);
+    const t = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => clearTimeout(t);
   }, []);
 
   const triggerShake = () => {
     setShake(true);
-    setTimeout(() => setShake(false), 500);
+    const t = setTimeout(() => setShake(false), 500);
+    return () => clearTimeout(t);
   };
 
   const handleSetup = async () => {

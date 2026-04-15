@@ -262,19 +262,26 @@ export const useBridgeStore = create<BridgeStore>((set, get) => ({
   },
 }));
 
-// Listen for relay-restarted events from the watchdog and refresh overview + history
-listen<string>("relay-restarted", (event) => {
-  const store = useBridgeStore.getState();
-  store.fetchOverview();
-  store.fetchBridgeHistory(event.payload);
-}).catch(() => {});
+// Guard against duplicate listener registration on hot reloads
+let _bridgeListenersRegistered = false;
 
-// Listen for relay-restart-failed events (watchdog gave up after max restarts)
-listen<RelayRestartFailedEvent>("relay-restart-failed", (event) => {
-  const { distro, count } = event.payload;
-  toast.warning(`Auto-restart paused for ${distro} after ${count} failed attempts`);
-  const store = useBridgeStore.getState();
-  store.fetchOverview();
-  store.fetchBridgeHistory(distro);
-}).catch(() => {});
-// Note: no unlisten — these listeners persist for the app lifetime
+export function ensureBridgeListeners(): void {
+  if (_bridgeListenersRegistered) return;
+  _bridgeListenersRegistered = true;
+
+  // Listen for relay-restarted events from the watchdog
+  listen<string>("relay-restarted", (event) => {
+    const store = useBridgeStore.getState();
+    store.fetchOverview();
+    store.fetchBridgeHistory(event.payload);
+  }).catch(() => {});
+
+  // Listen for relay-restart-failed events (watchdog gave up after max restarts)
+  listen<RelayRestartFailedEvent>("relay-restart-failed", (event) => {
+    const { distro, count } = event.payload;
+    toast.warning(`Auto-restart paused for ${distro} after ${count} failed attempts`);
+    const store = useBridgeStore.getState();
+    store.fetchOverview();
+    store.fetchBridgeHistory(distro);
+  }).catch(() => {});
+}
