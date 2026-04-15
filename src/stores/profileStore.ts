@@ -59,11 +59,19 @@ export const useProfileStore = create<ProfileStore>((set, get) => ({
   },
 
   deleteProfile: async (id: string) => {
-    await commands.deleteProfile(id);
-    if (get().selectedProfileId === id) {
-      set({ selectedProfileId: null, selectedProfile: null });
+    // Optimistic: remove from list immediately so UI feels instant
+    set((s) => ({
+      profiles: s.profiles.filter((p) => p.id !== id),
+      selectedProfileId: s.selectedProfileId === id ? null : s.selectedProfileId,
+      selectedProfile: s.selectedProfileId === id ? null : s.selectedProfile,
+    }));
+    try {
+      await commands.deleteProfile(id);
+    } catch (err) {
+      // Roll back on failure
+      await get().fetchProfiles();
+      throw err;
     }
-    await get().fetchProfiles();
   },
 
   scanKeys: async () => {

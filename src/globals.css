@@ -145,10 +145,20 @@ body {
 
 /* ─── Smooth transitions ─── */
 button, a {
-  transition: all 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease,
+              box-shadow 120ms ease, opacity 120ms ease,
+              border-color 120ms ease;
 }
 input, select, textarea {
   transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* Respect user motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, button, a, input, select, textarea {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+  }
 }
 
 /* ─── Focus ring ─── */
