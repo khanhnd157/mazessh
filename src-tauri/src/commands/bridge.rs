@@ -595,6 +595,38 @@ pub fn import_bridge_config(
                 "Imported config contains a distro with an empty name".to_string(),
             ));
         }
+        // Validate socket path if set
+        if let Some(ref socket) = d.socket_path {
+            if !socket.is_empty() {
+                validate_socket_path(socket).map_err(|_| {
+                    MazeSshError::BridgeError(format!(
+                        "Distro '{}': invalid socket path in imported config",
+                        d.distro_name
+                    ))
+                })?;
+            }
+        }
+        // Validate custom provider pipe path
+        if let crate::models::bridge_provider::BridgeProvider::Custom { ref pipe_path } = d.provider {
+            if !pipe_path.is_empty() {
+                let valid_prefix = pipe_path.starts_with(r"\\.\pipe\") || pipe_path.starts_with("//./pipe/");
+                if !valid_prefix {
+                    return Err(MazeSshError::BridgeError(format!(
+                        "Distro '{}': custom pipe path must start with \\\\.\\pipe\\ or //./pipe/",
+                        d.distro_name
+                    )));
+                }
+                let pipe_name = pipe_path
+                    .trim_start_matches(r"\\.\pipe\")
+                    .trim_start_matches("//./pipe/");
+                if !pipe_name.chars().all(|c| c.is_alphanumeric() || "-_".contains(c)) {
+                    return Err(MazeSshError::BridgeError(format!(
+                        "Distro '{}': custom pipe name contains invalid characters (allowed: a-z A-Z 0-9 - _)",
+                        d.distro_name
+                    )));
+                }
+            }
+        }
     }
 
     let count = imported.distros.len();
@@ -607,7 +639,6 @@ pub fn import_bridge_config(
             config.distros.push(imported_distro);
         }
     }
-
     bridge_service::save_bridge_config(&config)?;
     Ok(count)
 }
