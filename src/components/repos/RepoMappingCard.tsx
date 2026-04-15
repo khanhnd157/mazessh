@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { FolderGit2, Trash2, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
@@ -15,12 +15,15 @@ interface RepoMappingCardProps {
 }
 
 export const RepoMappingCard = memo(function RepoMappingCard({ mapping }: RepoMappingCardProps) {
-  const { deleteMapping } = useRepoMappingStore();
-  const { profiles } = useProfileStore();
-  const { addLog } = useLogStore();
+  const deleteMapping = useRepoMappingStore((s) => s.deleteMapping);
+  const profiles = useProfileStore((s) => s.profiles);
+  const addLog = useLogStore((s) => s.addLog);
   const { confirmProps, confirm } = useConfirm();
 
-  const profile = profiles.find((p) => p.id === mapping.profile_id);
+  const profile = useMemo(
+    () => profiles.find((p) => p.id === mapping.profile_id),
+    [profiles, mapping.profile_id],
+  );
 
   const handleInstallHook = useCallback(async () => {
     try {

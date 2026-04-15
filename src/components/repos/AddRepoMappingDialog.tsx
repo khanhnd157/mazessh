@@ -14,9 +14,9 @@ interface AddRepoMappingDialogProps {
 }
 
 export function AddRepoMappingDialog({ onClose, preselectedProfileId }: AddRepoMappingDialogProps) {
-  const { createMapping } = useRepoMappingStore();
-  const { profiles } = useProfileStore();
-  const { addLog } = useLogStore();
+  const createMapping = useRepoMappingStore((s) => s.createMapping);
+  const profiles = useProfileStore((s) => s.profiles);
+  const addLog = useLogStore((s) => s.addLog);
 
   const [repoPath, setRepoPath] = useState("");
   const [resolvedPath, setResolvedPath] = useState<string | null>(null);

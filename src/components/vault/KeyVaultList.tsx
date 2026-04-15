@@ -14,7 +14,13 @@ import { KeyCard } from "./KeyCard";
 import type { KeyState } from "@/types";
 
 export function KeyVaultList() {
-  const { vaultState, keys, keysLoading, selectedKeyId, selectedKey, fetchKeys, selectKey } = useVaultStore();
+  const vaultState = useVaultStore((s) => s.vaultState);
+  const keys = useVaultStore((s) => s.keys);
+  const keysLoading = useVaultStore((s) => s.keysLoading);
+  const selectedKeyId = useVaultStore((s) => s.selectedKeyId);
+  const selectedKey = useVaultStore((s) => s.selectedKey);
+  const fetchKeys = useVaultStore((s) => s.fetchKeys);
+  const selectKey = useVaultStore((s) => s.selectKey);
   const [search, setSearch] = useState("");
   const [filterState, setFilterState] = useState<"all" | KeyState>("all");
   const [showGenerate, setShowGenerate] = useState(false);
