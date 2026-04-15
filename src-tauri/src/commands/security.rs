@@ -4,6 +4,7 @@ use crate::error::MazeSshError;
 use crate::models::security::{AuditEntry, LockStateResponse, SecuritySettings};
 use crate::services::{audit_service, lock_service, session_service, settings_service, ssh_engine, validation};
 use crate::state::AppState;
+use zeroize::Zeroize;
 
 /// Helper: lock the app (used by command and by lib.rs on_window_event)
 pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
@@ -30,6 +31,7 @@ pub fn do_lock(app: &tauri::AppHandle) -> Result<(), MazeSshError> {
                 action: "lock".to_string(),
                 profile_name: None,
                 result: "Locked — agent keys cleared".to_string(),
+                ..Default::default()
             });
 
             // Also emit agent status
@@ -58,35 +60,41 @@ pub fn ensure_unlocked(state: &AppState) -> Result<(), MazeSshError> {
 }
 
 #[tauri::command]
-pub fn setup_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
-    validation::validate_pin(&pin)?;
+pub fn setup_pin(mut pin: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
+    let result = (|| {
+        validation::validate_pin(&pin)?;
 
-    let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
-    if security.pin_is_set {
-        return Err(MazeSshError::SecurityError("PIN already configured".to_string()));
-    }
-    drop(security);
+        let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
+        if security.pin_is_set {
+            return Err(MazeSshError::SecurityError("PIN already configured".to_string()));
+        }
+        drop(security);
 
-    lock_service::set_pin(&pin)?;
+        lock_service::set_pin(&pin)?;
 
-    let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
-    security.pin_is_set = true;
+        let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
+        security.pin_is_set = true;
 
-    audit_service::append_log(&AuditEntry {
-        timestamp: chrono::Utc::now().to_rfc3339(),
-        action: "pin_set".to_string(),
-        profile_name: None,
-        result: "success".to_string(),
-    });
+        audit_service::append_log(&AuditEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            action: "pin_set".to_string(),
+            profile_name: None,
+            result: "success".to_string(),
+            ..Default::default()
+        });
 
-    Ok(())
+        Ok(())
+    })();
+    pin.zeroize();
+    result
 }
 
 const MAX_PIN_ATTEMPTS: u32 = 5;
 const LOCKOUT_SECONDS: u64 = 60;
 
 #[tauri::command]
-pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeSshError> {
+pub fn verify_pin(mut pin: String, state: State<'_, AppState>) -> Result<bool, MazeSshError> {
+    let result = (|| {
     // Rate limiting: check if locked out from too many attempts
     {
         let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
@@ -117,6 +125,7 @@ pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeS
             action: "unlock".to_string(),
             profile_name: None,
             result: "success".to_string(),
+            ..Default::default()
         });
     } else {
         let mut security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
@@ -129,17 +138,22 @@ pub fn verify_pin(pin: String, state: State<'_, AppState>) -> Result<bool, MazeS
             action: "unlock_failed".to_string(),
             profile_name: None,
             result: format!("Invalid PIN ({} attempts remaining)", attempts_left),
+            ..Default::default()
         });
     }
     Ok(valid)
+    })();
+    pin.zeroize();
+    result
 }
 
 #[tauri::command]
 pub fn change_pin(
-    old_pin: String,
-    new_pin: String,
+    mut old_pin: String,
+    mut new_pin: String,
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
+    let result = (|| {
     ensure_unlocked(&state)?;
 
     validation::validate_pin(&new_pin)?;
@@ -156,13 +170,19 @@ pub fn change_pin(
         action: "pin_changed".to_string(),
         profile_name: None,
         result: "success".to_string(),
+        ..Default::default()
     });
 
     Ok(())
+    })();
+    old_pin.zeroize();
+    new_pin.zeroize();
+    result
 }
 
 #[tauri::command]
-pub fn remove_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
+pub fn remove_pin(mut pin: String, state: State<'_, AppState>) -> Result<(), MazeSshError> {
+    let result = (|| {
     ensure_unlocked(&state)?;
 
     let valid = lock_service::verify_pin(&pin)?;
@@ -181,9 +201,13 @@ pub fn remove_pin(pin: String, state: State<'_, AppState>) -> Result<(), MazeSsh
         action: "pin_removed".to_string(),
         profile_name: None,
         result: "success".to_string(),
+        ..Default::default()
     });
 
     Ok(())
+    })();
+    pin.zeroize();
+    result
 }
 
 #[tauri::command]
@@ -207,6 +231,7 @@ pub fn get_lock_state(state: State<'_, AppState>) -> Result<LockStateResponse, M
 
 #[tauri::command]
 pub fn get_security_settings(state: State<'_, AppState>) -> Result<SecuritySettings, MazeSshError> {
+    ensure_unlocked(&state)?;
     let security = state.security.lock().map_err(|_| MazeSshError::StateLockError)?;
     Ok(security.settings.clone())
 }
@@ -227,6 +252,7 @@ pub fn update_security_settings(
         action: "settings_changed".to_string(),
         profile_name: None,
         result: "success".to_string(),
+        ..Default::default()
     });
 
     Ok(())
@@ -237,7 +263,9 @@ pub fn get_audit_logs(
     limit: u32,
     offset: u32,
     action_filter: Option<String>,
+    state: State<'_, AppState>,
 ) -> Result<Vec<AuditEntry>, MazeSshError> {
+    ensure_unlocked(&state)?;
     Ok(audit_service::read_logs(
         limit as usize,
         offset as usize,
@@ -247,6 +275,7 @@ pub fn get_audit_logs(
 
 #[tauri::command]
 pub fn get_agent_time_remaining(state: State<'_, AppState>) -> Result<Option<u64>, MazeSshError> {
+    ensure_unlocked(&state)?;
     Ok(session_service::get_agent_time_remaining(&state))
 }
 

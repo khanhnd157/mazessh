@@ -9,7 +9,7 @@ pub mod state;
 use std::time::Duration;
 
 #[cfg(feature = "desktop")]
-use services::{lock_service, profile_service, repo_mapping_service, session_service, settings_service};
+use services::{bridge_service, lock_service, profile_service, repo_mapping_service, session_service, settings_service};
 #[cfg(feature = "desktop")]
 use state::AppState;
 #[cfg(feature = "desktop")]
@@ -21,9 +21,22 @@ use tauri::{
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn update_tray_tooltip(app: tauri::AppHandle, tooltip: String) {
+fn update_tray_tooltip(app: tauri::AppHandle, state: tauri::State<'_, AppState>, profile_id: Option<String>) {
+    let text = match &profile_id {
+        Some(id) => {
+            if let Ok(inner) = state.inner.read() {
+                inner.profiles.iter()
+                    .find(|p| &p.id == id)
+                    .map(|p| format!("Maze SSH - {}", p.name))
+                    .unwrap_or_else(|| "Maze SSH - No active profile".to_string())
+            } else {
+                "Maze SSH".to_string()
+            }
+        }
+        None => "Maze SSH - No active profile".to_string(),
+    };
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let _ = tray.set_tooltip(Some(&tooltip));
+        let _ = tray.set_tooltip(Some(&text));
     }
 }
 
@@ -36,14 +49,16 @@ pub fn run() {
     let repo_mappings = repo_mapping_service::load_mappings().unwrap_or_default();
     let settings = settings_service::load_settings();
     let pin_is_set = lock_service::is_pin_configured();
+    let bridge_config = bridge_service::load_bridge_config();
 
-    let app_state = AppState::from_persisted(profiles, active_id, repo_mappings, settings, pin_is_set);
+    let app_state = AppState::from_persisted(profiles, active_id, repo_mappings, settings, pin_is_set, bridge_config);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(app_state)
         .setup(|app| {
             // Build tray menu
@@ -110,6 +125,15 @@ pub fn run() {
                     tokio::time::sleep(Duration::from_secs(15)).await;
                     session_service::check_inactivity_and_lock(&timer_handle);
                     session_service::check_agent_expiry(&timer_handle);
+                }
+            });
+
+            // Start relay watchdog timer (30s interval)
+            let watchdog_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    bridge_service::poll_and_restart_relays(&watchdog_app).await;
                 }
             });
 
@@ -186,6 +210,45 @@ pub fn run() {
             commands::advanced::export_profiles,
             commands::advanced::import_profiles,
             commands::advanced::get_key_fingerprint,
+            commands::advanced::check_all_keys_health,
+            commands::advanced::read_public_key,
+            // Bridge
+            commands::bridge::get_bridge_overview,
+            commands::bridge::list_wsl_distros,
+            commands::bridge::bootstrap_bridge,
+            commands::bridge::teardown_bridge,
+            commands::bridge::start_bridge_relay,
+            commands::bridge::stop_bridge_relay,
+            commands::bridge::restart_bridge_relay,
+            commands::bridge::get_distro_bridge_status,
+            commands::bridge::set_bridge_enabled,
+            commands::bridge::list_bridge_providers,
+            commands::bridge::set_distro_provider,
+            commands::bridge::get_recommended_provider,
+            commands::bridge::set_agent_forwarding,
+            commands::bridge::run_bridge_diagnostics,
+            commands::bridge::get_relay_logs,
+            commands::bridge::get_relay_binary_versions,
+            commands::bridge::download_relay_binary,
+            commands::bridge::set_auto_restart,
+            commands::bridge::check_relay_binary_updates,
+            commands::bridge::set_distro_socket_path,
+            commands::bridge::reset_watchdog_restart_count,
+            commands::bridge::run_diagnostic_fix,
+            commands::bridge::scan_windows_named_pipes,
+            commands::bridge::export_bridge_config,
+            commands::bridge::import_bridge_config,
+            commands::bridge::bootstrap_all_distros,
+            commands::bridge::refresh_relay_script,
+            commands::bridge::get_shell_injections,
+            commands::bridge::remove_shell_injection,
+            commands::bridge::test_ssh_via_bridge,
+            // Phase 8
+            commands::bridge::get_bridge_history,
+            commands::bridge::set_distro_max_restarts,
+            commands::bridge::preview_windows_ssh_host,
+            commands::bridge::upsert_windows_ssh_host,
+            commands::bridge::remove_windows_ssh_host,
             // Tray
             update_tray_tooltip,
         ])

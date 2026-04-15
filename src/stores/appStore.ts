@@ -5,10 +5,7 @@ import type { ActivationResult, ConnectionTestResult, GitIdentityInfo, ProfileSu
 import { getProviderLabel } from "@/types";
 
 function updateTrayTooltip(profile: ProfileSummary | null) {
-  const tooltip = profile
-    ? `Maze SSH - ${profile.name} (${getProviderLabel(profile.provider)})`
-    : "Maze SSH - No active profile";
-  invoke("update_tray_tooltip", { tooltip }).catch(() => {});
+  invoke("update_tray_tooltip", { profileId: profile?.id ?? null }).catch(() => {});
 }
 
 interface AppStore {

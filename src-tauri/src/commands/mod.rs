@@ -1,4 +1,5 @@
 pub mod advanced;
+pub mod bridge;
 pub mod git;
 pub mod git_identity;
 pub mod hooks;

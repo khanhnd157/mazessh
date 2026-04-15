@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 
 use maze_ssh_lib::services::{
-    config_engine, git_identity_service, key_scanner, profile_service, repo_detection_service,
-    repo_mapping_service, ssh_engine,
+    bridge_service, config_engine, git_identity_service, key_scanner, profile_service,
+    repo_detection_service, repo_mapping_service, ssh_engine,
 };
 
 #[derive(Parser)]
@@ -60,6 +60,12 @@ enum Commands {
         /// Path to JSON file
         file: String,
     },
+
+    /// WSL agent bridge control
+    Bridge {
+        #[command(subcommand)]
+        action: BridgeAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -70,6 +76,31 @@ enum ConfigAction {
     Write,
     /// List config backups
     Backups,
+}
+
+#[derive(Subcommand)]
+enum BridgeAction {
+    /// Show bridge status for all distros, or a specific one
+    Status {
+        /// WSL distro name (omit for all)
+        #[arg(long)]
+        distro: Option<String>,
+    },
+    /// Start the relay in a WSL distro
+    Start {
+        /// WSL distro name
+        distro: String,
+    },
+    /// Stop the relay in a WSL distro
+    Stop {
+        /// WSL distro name
+        distro: String,
+    },
+    /// Restart the relay in a WSL distro
+    Restart {
+        /// WSL distro name
+        distro: String,
+    },
 }
 
 fn main() {
@@ -98,6 +129,12 @@ fn main() {
         },
         Commands::Export => cmd_export(),
         Commands::Import { file } => cmd_import(&file),
+        Commands::Bridge { action } => match action {
+            BridgeAction::Status { distro } => cmd_bridge_status(distro.as_deref()),
+            BridgeAction::Start { distro } => cmd_bridge_start(&distro),
+            BridgeAction::Stop { distro } => cmd_bridge_stop(&distro),
+            BridgeAction::Restart { distro } => cmd_bridge_restart(&distro),
+        },
     };
 
     if let Err(e) = result {
@@ -167,7 +204,7 @@ fn cmd_use(name: &str) -> Result<(), String> {
     // SSH agent
     match ssh_engine::ensure_agent_running() {
         Ok(true) => {
-            match ssh_engine::agent_switch_key(&profile.private_key_path.to_string_lossy()) {
+            match ssh_engine::agent_switch_key(&profile.private_key_path.to_string_lossy(), None) {
                 Ok(_) => println!("  {} Key loaded into ssh-agent", "✓".green()),
                 Err(e) => println!("  {} ssh-add failed: {}", "✗".red(), e),
             }
@@ -456,6 +493,128 @@ fn cmd_import(file: &str) -> Result<(), String> {
     profile_service::save_profiles(&profiles).map_err(|e| e.to_string())?;
     println!("\n{} {} profile(s) imported.", "✓".green().bold(), count);
 
+    Ok(())
+}
+
+fn cmd_bridge_status(distro_filter: Option<&str>) -> Result<(), String> {
+    let config = bridge_service::load_bridge_config();
+
+    if config.distros.is_empty() && distro_filter.is_none() {
+        println!("{}", "No bridge distros configured.".dimmed());
+        println!("Bootstrap a distro in the Maze SSH desktop app.");
+        return Ok(());
+    }
+
+    let distros_to_show: Vec<_> = if let Some(name) = distro_filter {
+        config
+            .distros
+            .iter()
+            .filter(|d| d.distro_name.eq_ignore_ascii_case(name))
+            .collect()
+    } else {
+        config.distros.iter().collect()
+    };
+
+    if distros_to_show.is_empty() {
+        if let Some(name) = distro_filter {
+            eprintln!("{}", format!("No config found for distro '{name}'.").red());
+        }
+        return Ok(());
+    }
+
+    println!("{}", "WSL Bridge Status".bold());
+    println!("{}", "─".repeat(60).dimmed());
+
+    for distro_cfg in distros_to_show {
+        let status = bridge_service::get_distro_status(&distro_cfg.distro_name, &config);
+
+        let active_marker = if status.service_active {
+            "●".green().to_string()
+        } else {
+            "○".red().to_string()
+        };
+        let state_label = if status.service_active {
+            "active".green().to_string()
+        } else {
+            "inactive".red().to_string()
+        };
+
+        println!(
+            "  {} {} {} [WSL{}]",
+            active_marker,
+            distro_cfg.distro_name.bold(),
+            state_label,
+            status.wsl_version
+        );
+        println!(
+            "    {}",
+            format!("Provider:        {}", distro_cfg.provider.display_name()).dimmed()
+        );
+        println!("    {}", format!("Socket:          {}", status.socket_path).dimmed());
+        println!("    {}", format!("Socket exists:   {}", status.socket_exists).dimmed());
+        println!("    {}", format!("Agent reachable: {}", status.agent_reachable).dimmed());
+        println!(
+            "    {}",
+            format!(
+                "Auto-restart:    {} (max {})",
+                distro_cfg.auto_restart, distro_cfg.max_restarts
+            )
+            .dimmed()
+        );
+        if let Some(err) = &status.error {
+            println!("    {} {}", "Error:".red(), err.red());
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn cmd_bridge_start(distro: &str) -> Result<(), String> {
+    let config = bridge_service::load_bridge_config();
+    let cfg = config
+        .distros
+        .iter()
+        .find(|d| d.distro_name.eq_ignore_ascii_case(distro))
+        .ok_or_else(|| {
+            format!("No bridge config for '{distro}'. Bootstrap in the Maze SSH desktop app.")
+        })?;
+
+    println!("{} Starting relay in {}...", "→".blue(), distro.bold());
+    bridge_service::start_relay(&cfg.distro_name, &cfg.relay_mode).map_err(|e| e.to_string())?;
+    println!("{} Relay started.", "✓".green().bold());
+    Ok(())
+}
+
+fn cmd_bridge_stop(distro: &str) -> Result<(), String> {
+    let config = bridge_service::load_bridge_config();
+    let cfg = config
+        .distros
+        .iter()
+        .find(|d| d.distro_name.eq_ignore_ascii_case(distro))
+        .ok_or_else(|| {
+            format!("No bridge config for '{distro}'. Bootstrap in the Maze SSH desktop app.")
+        })?;
+
+    println!("{} Stopping relay in {}...", "→".blue(), distro.bold());
+    bridge_service::stop_relay(&cfg.distro_name, &cfg.relay_mode).map_err(|e| e.to_string())?;
+    println!("{} Relay stopped.", "✓".green().bold());
+    Ok(())
+}
+
+fn cmd_bridge_restart(distro: &str) -> Result<(), String> {
+    let config = bridge_service::load_bridge_config();
+    let cfg = config
+        .distros
+        .iter()
+        .find(|d| d.distro_name.eq_ignore_ascii_case(distro))
+        .ok_or_else(|| {
+            format!("No bridge config for '{distro}'. Bootstrap in the Maze SSH desktop app.")
+        })?;
+
+    println!("{} Restarting relay in {}...", "→".blue(), distro.bold());
+    bridge_service::restart_relay(&cfg.distro_name, &cfg.relay_mode).map_err(|e| e.to_string())?;
+    println!("{} Relay restarted.", "✓".green().bold());
     Ok(())
 }
 

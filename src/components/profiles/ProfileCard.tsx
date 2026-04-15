@@ -24,13 +24,18 @@ export function ProfileCard({ profile, isSelected, onClick }: ProfileCardProps) 
         <div className="relative shrink-0">
           <ProviderIcon provider={profile.provider} size={16} />
           {profile.is_active && (
-            <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-success ring-[1.5px] ring-background" />
+            <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-success ring-[1.5px] ring-background" aria-hidden="true" />
           )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             <span className="font-medium text-[12.5px] truncate leading-tight">{profile.name}</span>
-            {profile.is_active && <Check size={11} className="text-success shrink-0" />}
+            {profile.is_active && (
+              <>
+                <Check size={11} className="text-success shrink-0" aria-hidden="true" />
+                <span className="sr-only">(active)</span>
+              </>
+            )}
           </div>
           <div className="text-[10.5px] text-muted-foreground/70 truncate leading-tight mt-px">
             {getProviderLabel(profile.provider)} · {profile.email}
