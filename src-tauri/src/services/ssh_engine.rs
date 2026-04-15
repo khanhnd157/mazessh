@@ -60,6 +60,20 @@ pub fn build_env_file_content(profile: &SshProfile) -> String {
     content
 }
 
+/// Build env file content that routes through MazeSSH Agent.
+pub fn build_env_file_content_agent(profile: &SshProfile) -> String {
+    let ssh_command = build_git_ssh_command_agent(profile);
+    let pipe = crate::services::agent_service::PIPE_NAME;
+    let mut content = String::new();
+    content.push_str(&format!("export GIT_SSH_COMMAND='{}'\n", ssh_command));
+    content.push_str(&format!("export SSH_AUTH_SOCK='{}'\n", pipe));
+    content.push_str(&format!(
+        "# Active profile: {} ({}) — via MazeSSH Agent\n",
+        profile.name, profile.provider
+    ));
+    content
+}
+
 /// Write the env file to ~/.maze-ssh/env for shell sourcing
 pub fn write_env_file(profile: &SshProfile) -> Result<(), std::io::Error> {
     let home = dirs::home_dir().ok_or_else(|| {

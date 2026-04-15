@@ -67,7 +67,17 @@ pub async fn activate_profile(
 
     // Step 2: Save to disk (fast)
     profile_service::save_active_profile_id(Some(&id))?;
-    ssh_engine::write_env_file(&profile).map_err(MazeSshError::IoError)?;
+    // Write agent-aware env file
+    match agent_mode {
+        AgentMode::Vault => {
+            let content = ssh_engine::build_env_file_content_agent(&profile);
+            let home = dirs::home_dir().ok_or_else(|| MazeSshError::ConfigError("Home not found".into()))?;
+            std::fs::write(home.join(".maze-ssh").join("env"), content).map_err(MazeSshError::IoError)?;
+        }
+        AgentMode::FileSystem => {
+            ssh_engine::write_env_file(&profile).map_err(MazeSshError::IoError)?;
+        }
+    }
 
     let profile_name = profile.name.clone();
     let profile_for_bg = profile.clone();

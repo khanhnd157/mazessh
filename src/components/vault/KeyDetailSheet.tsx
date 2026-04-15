@@ -81,7 +81,7 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
               </span>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors">
+          <button type="button" onClick={onClose} title="Close" className="p-1.5 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -146,6 +146,23 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
 
           {activeTab === "security" && (
             <div className="space-y-4">
+              {/* Allowed Hosts */}
+              <div>
+                <h4 className="text-xs font-medium text-muted-foreground mb-1.5">Allowed Hosts</h4>
+                {keyItem.allowed_hosts.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {keyItem.allowed_hosts.map((host) => (
+                      <span key={host} className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                        {host}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground/50">All hosts allowed (no restrictions)</p>
+                )}
+              </div>
+
+              {/* Export Policy */}
               <div>
                 <h4 className="text-xs font-medium text-muted-foreground mb-1">Export Policy</h4>
                 <p className="text-sm">
@@ -196,16 +213,16 @@ function InfoRow({ label, value, mono, copyable }: { label: string; value: strin
   };
 
   return (
-    <div>
+    <dl>
       <dt className="text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">{label}</dt>
       <dd className={`text-sm mt-0.5 ${mono ? "font-mono text-xs break-all" : ""}`}>
         {value}
         {copyable && (
-          <button type="button" onClick={handleCopy} className="ml-2 inline-flex text-muted-foreground/40 hover:text-foreground transition-colors">
+          <button type="button" onClick={handleCopy} title={`Copy ${label}`} className="ml-2 inline-flex text-muted-foreground/40 hover:text-foreground transition-colors">
             <Copy size={11} />
           </button>
         )}
       </dd>
-    </div>
+    </dl>
   );
 }
