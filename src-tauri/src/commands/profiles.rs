@@ -100,9 +100,18 @@ pub fn update_profile(
         profile.git_username = git_username;
     }
     if let Some(host_alias) = input.host_alias {
+        if host_alias.trim().is_empty()
+            || host_alias.len() > 253
+            || !host_alias.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.' || c == '_')
+        {
+            return Err(MazeSshError::ValidationError(
+                "Host alias contains invalid characters (use alphanumeric, hyphens, dots, underscores)".to_string(),
+            ));
+        }
         profile.host_alias = host_alias;
     }
     if let Some(hostname) = input.hostname {
+        validation::validate_hostname(&hostname)?;
         profile.hostname = hostname;
     }
     if let Some(port) = input.port {

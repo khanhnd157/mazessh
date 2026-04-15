@@ -158,15 +158,52 @@ fn parse_distro_list(text: &str) -> Result<Vec<WslDistro>, MazeSshError> {
     Ok(distros)
 }
 
-/// Run a command inside a specific WSL distro
+/// Maximum time to wait for a WSL command before killing it and returning an error.
+const WSL_CMD_TIMEOUT_SECS: u64 = 30;
+
+/// Run a command inside a specific WSL distro with a hard 30-second timeout.
+/// If the distro hangs or becomes unresponsive the child process is killed and
+/// an error is returned instead of blocking the caller indefinitely.
 pub fn run_in_wsl(distro: &str, args: &[&str]) -> Result<CmdOutput, MazeSshError> {
     let mut cmd = hidden_cmd("wsl");
     cmd.args(["-d", distro, "--"]);
     cmd.args(args);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
 
-    let output = cmd
-        .output()
-        .map_err(|e| MazeSshError::WslCommandFailed(format!("Failed to run command in {}: {}", distro, e)))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        MazeSshError::WslCommandFailed(format!("Failed to spawn command in {}: {}", distro, e))
+    })?;
+
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_secs(WSL_CMD_TIMEOUT_SECS);
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break, // process finished — collect output below
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait(); // reap zombie
+                    return Err(MazeSshError::WslCommandFailed(format!(
+                        "Command timed out after {}s in distro '{}'",
+                        WSL_CMD_TIMEOUT_SECS, distro
+                    )));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => {
+                return Err(MazeSshError::WslCommandFailed(format!(
+                    "Failed to poll command in {}: {}",
+                    distro, e
+                )));
+            }
+        }
+    }
+
+    let output = child.wait_with_output().map_err(|e| {
+        MazeSshError::WslCommandFailed(format!("Failed to collect output from {}: {}", distro, e))
+    })?;
 
     Ok(CmdOutput {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),

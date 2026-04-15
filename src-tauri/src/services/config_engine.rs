@@ -7,9 +7,10 @@ use crate::models::profile::SshProfile;
 const BEGIN_MARKER: &str = "# === BEGIN MAZE-SSH MANAGED ===";
 const END_MARKER: &str = "# === END MAZE-SSH MANAGED ===";
 
-fn ssh_config_path() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not find home directory");
-    home.join(".ssh").join("config")
+fn ssh_config_path() -> Result<PathBuf, MazeSshError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?;
+    Ok(home.join(".ssh").join("config"))
 }
 
 pub fn generate_config_block(profiles: &[SshProfile]) -> String {
@@ -46,7 +47,7 @@ pub fn preview_config(profiles: &[SshProfile]) -> String {
 }
 
 pub fn write_config(profiles: &[SshProfile]) -> Result<(), MazeSshError> {
-    let config_path = ssh_config_path();
+    let config_path = ssh_config_path()?;
     let existing = if config_path.exists() {
         fs::read_to_string(&config_path)?
     } else {
@@ -65,7 +66,7 @@ pub fn write_config(profiles: &[SshProfile]) -> Result<(), MazeSshError> {
 }
 
 pub fn backup_config() -> Result<String, MazeSshError> {
-    let config_path = ssh_config_path();
+    let config_path = ssh_config_path()?;
     if !config_path.exists() {
         return Err(MazeSshError::ConfigError(
             "No SSH config file to backup".to_string(),
@@ -81,7 +82,7 @@ pub fn backup_config() -> Result<String, MazeSshError> {
 /// List all backup files for SSH config, newest first
 pub fn list_backups() -> Result<Vec<ConfigBackup>, MazeSshError> {
     let ssh_dir = dirs::home_dir()
-        .expect("Could not find home directory")
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?
         .join(".ssh");
     if !ssh_dir.exists() {
         return Ok(Vec::new());
@@ -124,7 +125,7 @@ pub fn rollback_config(backup_path: &str) -> Result<(), MazeSshError> {
             backup_path
         )));
     }
-    let config_path = ssh_config_path();
+    let config_path = ssh_config_path()?;
     // Backup current before rollback
     if config_path.exists() {
         let _ = backup_config();
@@ -135,7 +136,7 @@ pub fn rollback_config(backup_path: &str) -> Result<(), MazeSshError> {
 
 /// Read the current SSH config content
 pub fn read_current_config() -> Result<String, MazeSshError> {
-    let path = ssh_config_path();
+    let path = ssh_config_path()?;
     if !path.exists() {
         return Ok(String::new());
     }

@@ -4,17 +4,18 @@ use std::path::PathBuf;
 use crate::error::MazeSshError;
 use crate::models::repo_mapping::RepoMapping;
 
-fn data_dir() -> PathBuf {
-    let home = dirs::home_dir().expect("Could not find home directory");
-    home.join(".maze-ssh")
+fn data_dir() -> Result<PathBuf, MazeSshError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| MazeSshError::ConfigError("Home directory not found".to_string()))?;
+    Ok(home.join(".maze-ssh"))
 }
 
-fn mappings_path() -> PathBuf {
-    data_dir().join("repo_mappings.json")
+fn mappings_path() -> Result<PathBuf, MazeSshError> {
+    Ok(data_dir()?.join("repo_mappings.json"))
 }
 
 pub fn load_mappings() -> Result<Vec<RepoMapping>, MazeSshError> {
-    let path = mappings_path();
+    let path = mappings_path()?;
     if !path.exists() {
         return Ok(Vec::new());
     }
@@ -24,11 +25,11 @@ pub fn load_mappings() -> Result<Vec<RepoMapping>, MazeSshError> {
 }
 
 pub fn save_mappings(mappings: &[RepoMapping]) -> Result<(), MazeSshError> {
-    let dir = data_dir();
+    let dir = data_dir()?;
     if !dir.exists() {
         fs::create_dir_all(&dir)?;
     }
     let content = serde_json::to_string_pretty(mappings)?;
-    crate::services::profile_service::atomic_write(&mappings_path(), &content)?;
+    crate::services::profile_service::atomic_write(&mappings_path()?, &content)?;
     Ok(())
 }

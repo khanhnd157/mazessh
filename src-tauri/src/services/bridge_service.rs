@@ -19,7 +19,9 @@ fn resolve_relay_mode(config: &BridgeConfig, distro: &str) -> RelayMode {
 // ── Config persistence ──
 
 fn bridge_config_path() -> PathBuf {
-    profile_service::data_dir().join("bridge.json")
+    profile_service::data_dir()
+        .unwrap_or_else(|_| PathBuf::from(".maze-ssh"))
+        .join("bridge.json")
 }
 
 pub fn load_bridge_config() -> BridgeConfig {
@@ -44,7 +46,10 @@ pub fn save_bridge_config(config: &BridgeConfig) -> Result<(), MazeSshError> {
 
 /// Path for a relay binary on the Windows filesystem (~/.maze-ssh/bin/{filename})
 pub fn relay_binary_path(binary: RelayBinary) -> PathBuf {
-    profile_service::data_dir().join("bin").join(binary.filename())
+    profile_service::data_dir()
+        .unwrap_or_else(|_| PathBuf::from(".maze-ssh"))
+        .join("bin")
+        .join(binary.filename())
 }
 
 pub fn is_relay_binary_installed(binary: RelayBinary) -> bool {
