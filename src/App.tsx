@@ -115,7 +115,7 @@ function App() {
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
       <Toaster
-        position="top-right"
+        position="bottom-right"
         richColors
         theme={theme}
         toastOptions={{ duration: 3000 }}
