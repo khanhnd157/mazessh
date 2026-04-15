@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Plus, KeyRound, Search, Radio, X } from "lucide-react";
 import { toast } from "sonner";
 import { commands } from "@/lib/tauri-commands";
@@ -14,7 +14,13 @@ import { KeyCard } from "./KeyCard";
 import type { KeyState } from "@/types";
 
 export function KeyVaultList() {
-  const { vaultState, keys, keysLoading, selectedKeyId, selectedKey, fetchKeys, selectKey } = useVaultStore();
+  const vaultState = useVaultStore((s) => s.vaultState);
+  const keys = useVaultStore((s) => s.keys);
+  const keysLoading = useVaultStore((s) => s.keysLoading);
+  const selectedKeyId = useVaultStore((s) => s.selectedKeyId);
+  const selectedKey = useVaultStore((s) => s.selectedKey);
+  const fetchKeys = useVaultStore((s) => s.fetchKeys);
+  const selectKey = useVaultStore((s) => s.selectKey);
   const [search, setSearch] = useState("");
   const [filterState, setFilterState] = useState<"all" | KeyState>("all");
   const [showGenerate, setShowGenerate] = useState(false);
@@ -39,14 +45,14 @@ export function KeyVaultList() {
     return <VaultUnlockPrompt />;
   }
 
-  const filtered = keys.filter((k) => {
-    if (filterState !== "all" && k.state !== filterState) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return k.name.toLowerCase().includes(q) || k.fingerprint.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return keys.filter((k) => {
+      if (filterState !== "all" && k.state !== filterState) return false;
+      if (q) return k.name.toLowerCase().includes(q) || k.fingerprint.toLowerCase().includes(q);
+      return true;
+    });
+  }, [keys, filterState, search]);
 
   return (
     <div className="space-y-4">
@@ -143,8 +149,22 @@ export function KeyVaultList() {
 
       {/* Key grid */}
       {keysLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="text-xs text-muted-foreground/50">Loading keys...</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" aria-hidden="true">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="rounded-lg p-3 border bg-secondary/50">
+              <div className="flex items-start justify-between gap-2">
+                <div className="space-y-2 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-3.5 w-28 rounded bg-muted animate-pulse" />
+                    <div className="h-4 w-14 rounded bg-muted/60 animate-pulse" />
+                  </div>
+                  <div className="h-2.5 w-44 rounded bg-muted/40 animate-pulse" />
+                </div>
+                <div className="w-2 h-2 rounded-full bg-muted animate-pulse mt-1.5" />
+              </div>
+              <div className="h-2.5 w-24 rounded bg-muted/30 animate-pulse mt-3" />
+            </div>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex items-center justify-center py-16">

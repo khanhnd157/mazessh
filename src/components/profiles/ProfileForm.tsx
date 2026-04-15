@@ -20,8 +20,11 @@ const providers: { value: Provider; label: string }[] = [
 ];
 
 export function ProfileForm({ onClose, editProfile }: ProfileFormProps) {
-  const { createProfile, updateProfile, scanKeys, detectedKeys } = useProfileStore();
-  const { addLog } = useLogStore();
+  const createProfile = useProfileStore((s) => s.createProfile);
+  const updateProfile = useProfileStore((s) => s.updateProfile);
+  const scanKeys = useProfileStore((s) => s.scanKeys);
+  const detectedKeys = useProfileStore((s) => s.detectedKeys);
+  const addLog = useLogStore((s) => s.addLog);
 
   const isEdit = !!editProfile;
 
