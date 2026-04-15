@@ -52,14 +52,17 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     setShowEdit(false);
     setShowAddRepo(false);
     setFingerprint(null);
-    commands.getRepoMappingsForProfile(profile.id).then(setProfileMappings);
+    setProfileMappings([]);
+    commands.getRepoMappingsForProfile(profile.id)
+      .then(setProfileMappings)
+      .catch(() => {});
     commands.getKeyFingerprint(profile.id).then(setFingerprint).catch(() => {});
   }, [profile.id]);
 
   const { confirmProps, confirm } = useConfirm();
   const isActive = activeProfile?.id === profile.id;
 
-  const handleActivate = async () => {
+  const handleActivate = useCallback(async () => {
     try {
       const result = await activateProfile(profile.id);
       await fetchProfiles();
@@ -73,9 +76,9 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
       addLog({ action: "activate", detail: `Failed: ${err}`, level: "error" });
       toast.error("Activation failed", { description: String(err) });
     }
-  };
+  }, [profile.id, activateProfile, fetchProfiles, addLog]);
 
-  const handleTest = async () => {
+  const handleTest = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
     try {
@@ -97,7 +100,7 @@ export function ProfileDetail({ profile }: ProfileDetailProps) {
     } finally {
       setTesting(false);
     }
-  };
+  }, [profile.id, testConnection, addLog]);
 
   const handleDelete = useCallback(async () => {
     const ok = await confirm({

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Toaster, toast } from "sonner";
 import { KeyRound, FileCode2, FolderGit2, Monitor, Settings, Shield } from "lucide-react";
@@ -232,8 +232,13 @@ function TabPanel({
 }: {
   active: boolean;
   scrollable?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
+  // Mount on first visit, stay mounted afterward (preserves state, avoids re-fetching)
+  const hasMounted = useRef(false);
+  if (active) hasMounted.current = true;
+  if (!hasMounted.current) return null;
+
   return (
     <div
       role="tabpanel"
