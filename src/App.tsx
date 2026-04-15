@@ -57,54 +57,50 @@ function App() {
 
   // Event listeners — stable, no store deps
   useEffect(() => {
-    const unlistenAgent = listen<AgentStatusEvent>("agent-status", (event) => {
-      useLogStore.getState().addLog({
-        action: "agent",
-        detail: event.payload.status,
-        level: event.payload.success ? "info" : "warn",
-      });
-      if (event.payload.success) {
-        toast.success("SSH Agent", { description: event.payload.status });
-      } else {
-        toast.warning("SSH Agent", { description: event.payload.status });
-      }
-      useAppStore.getState().fetchGitIdentity();
-    });
+    const unlisteners: (() => void)[] = [];
 
-    const unlistenLock = listen("lock-state-changed", (event) => {
-      const payload = event.payload as { is_locked: boolean };
-      useSecurityStore.getState().setLocked(payload.is_locked);
-      if (payload.is_locked) {
-        toast.info("App locked");
-      }
-    });
-
-    const unlistenExpiry = listen("agent-expired", (event) => {
-      const payload = event.payload as { message: string };
-      useLogStore.getState().addLog({ action: "agent", detail: payload.message, level: "warn" });
-      toast.warning("Agent keys expired", { description: payload.message });
-      useAppStore.getState().fetchActiveProfile();
-    });
-
-    const unlistenVaultState = listen<{ initialized: boolean; unlocked: boolean; key_count: number }>("vault-state-changed", (event) => {
-      useVaultStore.getState().setVaultState(event.payload);
-      if (event.payload.unlocked) {
-        useVaultStore.getState().fetchKeys();
-      }
-    });
-
-    const unlistenConsent = listen<{ consent_id: string; key_name: string; process_name: string }>("consent-request", (event) => {
-      toast.info("SSH signing request", {
-        description: `${event.payload.process_name} wants to use "${event.payload.key_name}"`,
-      });
-    });
+    Promise.all([
+      listen<AgentStatusEvent>("agent-status", (event) => {
+        useLogStore.getState().addLog({
+          action: "agent",
+          detail: event.payload.status,
+          level: event.payload.success ? "info" : "warn",
+        });
+        if (event.payload.success) {
+          toast.success("SSH Agent", { description: event.payload.status });
+        } else {
+          toast.warning("SSH Agent", { description: event.payload.status });
+        }
+        useAppStore.getState().fetchGitIdentity();
+      }),
+      listen("lock-state-changed", (event) => {
+        const payload = event.payload as { is_locked: boolean };
+        useSecurityStore.getState().setLocked(payload.is_locked);
+        if (payload.is_locked) {
+          toast.info("App locked");
+        }
+      }),
+      listen("agent-expired", (event) => {
+        const payload = event.payload as { message: string };
+        useLogStore.getState().addLog({ action: "agent", detail: payload.message, level: "warn" });
+        toast.warning("Agent keys expired", { description: payload.message });
+        useAppStore.getState().fetchActiveProfile();
+      }),
+      listen<{ initialized: boolean; unlocked: boolean; key_count: number }>("vault-state-changed", (event) => {
+        useVaultStore.getState().setVaultState(event.payload);
+        if (event.payload.unlocked) {
+          useVaultStore.getState().fetchKeys();
+        }
+      }),
+      listen<{ consent_id: string; key_name: string; process_name: string }>("consent-request", (event) => {
+        toast.info("SSH signing request", {
+          description: `${event.payload.process_name} wants to use "${event.payload.key_name}"`,
+        });
+      }),
+    ]).then((fns) => unlisteners.push(...fns));
 
     return () => {
-      unlistenAgent.then((fn) => fn());
-      unlistenLock.then((fn) => fn());
-      unlistenExpiry.then((fn) => fn());
-      unlistenVaultState.then((fn) => fn());
-      unlistenConsent.then((fn) => fn());
+      for (const fn of unlisteners) fn();
     };
   }, []);
 
