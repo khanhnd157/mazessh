@@ -13,9 +13,11 @@ export function useKeyboardShortcuts() {
 
       const tabMap: Record<string, Tab> = {
         "1": "profiles",
-        "2": "repos",
-        "3": "config",
-        "4": "settings",
+        "2": "vault",
+        "3": "repos",
+        "4": "config",
+        "5": "bridge",
+        "6": "settings",
       };
 
       if (tabMap[e.key]) {

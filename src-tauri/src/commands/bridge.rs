@@ -16,6 +16,39 @@ pub struct BootstrapAllResult {
     pub error: Option<String>,
 }
 
+// Validation helper for Windows named pipe paths (Custom provider)
+fn validate_custom_pipe_path(pipe_path: &str) -> Result<(), MazeSshError> {
+    if pipe_path.is_empty() {
+        return Ok(());
+    }
+    let valid_prefix =
+        pipe_path.starts_with(r"\\.\pipe\") || pipe_path.starts_with("//./pipe/");
+    if !valid_prefix {
+        return Err(MazeSshError::BridgeError(
+            "Custom pipe path must start with \\\\.\\pipe\\ or //./pipe/".to_string(),
+        ));
+    }
+    // Extract just the pipe name after the prefix
+    let pipe_name = pipe_path
+        .trim_start_matches(r"\\.\pipe\")
+        .trim_start_matches("//./pipe/");
+    if pipe_name.is_empty() {
+        return Err(MazeSshError::BridgeError(
+            "Custom pipe name cannot be empty".to_string(),
+        ));
+    }
+    // Allowlist: alphanumeric, hyphens, underscores only — no shell metacharacters
+    if !pipe_name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(MazeSshError::BridgeError(
+            "Custom pipe name contains invalid characters (allowed: a-z A-Z 0-9 - _)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 // Validation helper for socket paths
 fn validate_socket_path(path: &str) -> Result<(), MazeSshError> {
     if path.is_empty() {
@@ -272,6 +305,12 @@ pub fn set_distro_provider(
     state: State<'_, AppState>,
 ) -> Result<(), MazeSshError> {
     ensure_unlocked(&state)?;
+
+    // Validate Custom provider pipe path before persisting
+    if let crate::models::bridge_provider::BridgeProvider::Custom { ref pipe_path } = provider {
+        validate_custom_pipe_path(pipe_path)?;
+    }
+
     let mut config = state.bridge.write().map_err(|_| MazeSshError::StateLockError)?;
 
     if let Some(d) = config.distros.iter_mut().find(|d| d.distro_name == distro) {
@@ -619,26 +658,14 @@ pub fn import_bridge_config(
                 })?;
             }
         }
-        // Validate custom provider pipe path
+        // Validate custom provider pipe path (uses same rules as set_distro_provider)
         if let crate::models::bridge_provider::BridgeProvider::Custom { ref pipe_path } = d.provider {
-            if !pipe_path.is_empty() {
-                let valid_prefix = pipe_path.starts_with(r"\\.\pipe\") || pipe_path.starts_with("//./pipe/");
-                if !valid_prefix {
-                    return Err(MazeSshError::BridgeError(format!(
-                        "Distro '{}': custom pipe path must start with \\\\.\\pipe\\ or //./pipe/",
-                        d.distro_name
-                    )));
-                }
-                let pipe_name = pipe_path
-                    .trim_start_matches(r"\\.\pipe\")
-                    .trim_start_matches("//./pipe/");
-                if !pipe_name.chars().all(|c| c.is_alphanumeric() || "-_".contains(c)) {
-                    return Err(MazeSshError::BridgeError(format!(
-                        "Distro '{}': custom pipe name contains invalid characters (allowed: a-z A-Z 0-9 - _)",
-                        d.distro_name
-                    )));
-                }
-            }
+            validate_custom_pipe_path(pipe_path).map_err(|_| {
+                MazeSshError::BridgeError(format!(
+                    "Distro '{}': custom pipe path is invalid (must be \\\\.\\pipe\\<alphanum-name>)",
+                    d.distro_name
+                ))
+            })?;
         }
     }
 

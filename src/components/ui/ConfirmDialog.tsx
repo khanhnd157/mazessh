@@ -94,18 +94,22 @@ export function ConfirmDialog({
         <div className="flex justify-end gap-2 px-5 py-3.5 border-t bg-secondary/30">
           <button
             type="button"
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus={variant === "danger"}
             onClick={onCancel}
-            className="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors"
+            className="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {cancelLabel}
           </button>
           <button
             type="button"
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus={variant !== "danger"}
             onClick={() => {
               onConfirm();
               onCancel();
             }}
-            className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${config.confirmBtn}`}
+            className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:outline-none ${config.confirmBtn}`}
           >
             {confirmLabel}
           </button>

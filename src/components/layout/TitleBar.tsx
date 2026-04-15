@@ -209,10 +209,11 @@ function SwitchDropdown() {
   useEffect(() => {
     if (open && btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
-      setDropdownPos({
-        top: rect.bottom + 4,
-        left: rect.left + rect.width / 2 - 120, // 120 = half of w-60 (240px)
-      });
+      const dropdownWidth = 240; // w-60
+      const idealLeft = rect.left + rect.width / 2 - dropdownWidth / 2;
+      // Clamp to viewport edges with 8px margin
+      const clampedLeft = Math.max(8, Math.min(idealLeft, window.innerWidth - dropdownWidth - 8));
+      setDropdownPos({ top: rect.bottom + 4, left: clampedLeft });
     }
   }, [open]);
 
@@ -230,10 +231,12 @@ function SwitchDropdown() {
       {open && createPortal(
         <div
           ref={dropdownRef}
+          role="menu"
+          aria-label="Switch Identity"
           style={{ top: dropdownPos.top, left: dropdownPos.left }}
           className="fixed w-60 rounded-lg border bg-popover shadow-xl shadow-black/20 z-50 overflow-hidden animate-fade-in"
         >
-          <div className="px-3 py-1.5 border-b">
+          <div className="px-3 py-1.5 border-b" aria-hidden="true">
             <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               Switch Identity
             </p>
@@ -242,6 +245,7 @@ function SwitchDropdown() {
             {profiles.map((p) => (
               <button
                 type="button"
+                role="menuitem"
                 key={p.id}
                 onClick={() => handleSwitch(p)}
                 className={`w-full text-left px-2.5 py-1.5 text-[12px] rounded-md transition-colors flex items-center gap-2 ${

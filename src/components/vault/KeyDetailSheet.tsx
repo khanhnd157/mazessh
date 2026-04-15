@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { X, Copy, Check, Archive, Trash2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { useVaultStore } from "@/stores/vaultStore";
@@ -17,26 +17,32 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
   const { archiveKey, deleteKey } = useVaultStore();
   const [activeTab, setActiveTab] = useState<SubTab>("overview");
   const [showDelete, setShowDelete] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const copyPubKey = async () => {
+  // Clean up copy feedback timer on unmount
+  useEffect(() => () => clearTimeout(copiedTimerRef.current), []);
+
+  const copyPubKey = useCallback(async () => {
     await navigator.clipboard.writeText(keyItem.public_key_openssh);
     setCopied(true);
     toast.success("Public key copied");
-    setTimeout(() => setCopied(false), 2000);
-  };
+    clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
+  }, [keyItem.public_key_openssh]);
 
-  const handleArchive = async () => {
+  const handleArchive = useCallback(async () => {
     await archiveKey(keyItem.id);
     toast.success(`Key "${keyItem.name}" archived`);
     onClose();
-  };
+  }, [archiveKey, keyItem.id, keyItem.name, onClose]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     await deleteKey(keyItem.id);
     toast.success(`Key "${keyItem.name}" deleted`);
     onClose();
-  };
+  }, [deleteKey, keyItem.id, keyItem.name, onClose]);
 
   const handleExportPrivate = async () => {
     try {
@@ -87,11 +93,14 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
         </div>
 
         {/* Sub-tabs */}
-        <div className="flex border-b px-5 shrink-0">
+        <div role="tablist" className="flex border-b px-5 shrink-0">
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={activeTab === t.id ? "true" : "false"}
+              tabIndex={activeTab === t.id ? 0 : -1}
               onClick={() => setActiveTab(t.id)}
               className={`relative px-3 py-2.5 text-xs font-medium transition-colors ${
                 activeTab === t.id ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -100,7 +109,7 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
               {t.label}
               <span className={`absolute bottom-0 left-1 right-1 h-0.5 rounded-full bg-primary transition-all ${
                 activeTab === t.id ? "opacity-100" : "opacity-0"
-              }`} />
+              }`} aria-hidden="true" />
             </button>
           ))}
         </div>
@@ -117,7 +126,7 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
 
               <div className="pt-3 border-t flex gap-2">
                 {keyItem.state === "active" && (
-                  <button type="button" onClick={handleArchive} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors">
+                  <button type="button" onClick={() => setShowArchive(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-secondary hover:bg-accent transition-colors">
                     <Archive size={12} /> Archive
                   </button>
                 )}
@@ -193,6 +202,15 @@ export function KeyDetailSheet({ keyItem, onClose }: Props) {
         </div>
       </div>
 
+      <ConfirmDialog
+        open={showArchive}
+        title={`Archive "${keyItem.name}"?`}
+        description="Archived keys cannot be used for signing. You can unarchive by contacting support or re-importing."
+        confirmLabel="Archive"
+        variant="warning"
+        onConfirm={handleArchive}
+        onCancel={() => setShowArchive(false)}
+      />
       <ConfirmDialog
         open={showDelete}
         title={`Delete "${keyItem.name}"?`}

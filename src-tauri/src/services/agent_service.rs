@@ -4,6 +4,7 @@ use maze_agent_protocol::{
     decode_message, encode_message, try_read_frame, AgentMessage, AgentResponse,
 };
 use maze_vault::SshKeyVault;
+use sha2::{Digest, Sha256};
 use ssh_key::PublicKey;
 use tauri::{Emitter, Manager};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -93,12 +94,42 @@ async fn run_agent_loop(
     // Limit concurrent connections to prevent resource exhaustion
     let semaphore = Arc::new(tokio::sync::Semaphore::new(100));
 
+    // The very first server instance must be created with first_pipe_instance=true.
+    // This causes CreateNamedPipe to fail with ERROR_ACCESS_DENIED if the pipe
+    // already exists — detecting a squatting attempt before we accept any connections.
+    let mut is_first_instance = true;
+
     loop {
-        // Create a new pipe server instance restricted to SYSTEM + current user
-        let server = match create_secure_pipe_server(PIPE_NAME, false) {
-            Ok(s) => s,
+        // Create a new pipe server instance restricted to SYSTEM + current user.
+        // first_pipe_instance=true on the first call prevents pipe squatting:
+        // another process that already owns the pipe name causes an error here.
+        let server = match create_secure_pipe_server(PIPE_NAME, is_first_instance) {
+            Ok(s) => {
+                // Subsequent instances (for additional clients) do not need to be first
+                is_first_instance = false;
+                s
+            }
+            Err(e) if is_first_instance => {
+                // Another process already owns \\.\pipe\maze-ssh-agent.
+                // This is a potential pipe squatting attack — refuse to run.
+                eprintln!(
+                    "[maze-agent] SECURITY: pipe '{}' already exists — possible squatting attack. \
+                     Agent daemon will not start. Error: {e}",
+                    PIPE_NAME
+                );
+                // Emit a warning event so the UI can alert the user
+                let _ = app_handle.emit(
+                    "agent-pipe-conflict",
+                    serde_json::json!({
+                        "pipe": PIPE_NAME,
+                        "message": "Another process owns the SSH agent pipe. \
+                                    Agent features are disabled for security."
+                    }),
+                );
+                return Err(Box::new(e));
+            }
             Err(e) => {
-                eprintln!("[maze-agent] failed to create pipe: {e}");
+                eprintln!("[maze-agent] failed to create pipe instance: {e}");
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 continue;
             }
@@ -375,6 +406,12 @@ async fn handle_sign_request(
         );
     }
 
+    // Compute SHA256 of the data being signed so the UI can display it.
+    // We show both a truncated hex preview and the full hash — the user
+    // can copy the full hash and verify it out-of-band if desired.
+    let data_sha256 = hex::encode(Sha256::digest(data));
+    let data_preview: String = data.iter().take(32).map(|b| format!("{:02x}", b)).collect();
+
     // Open consent popup window and emit event
     open_consent_window(app_handle);
     let _ = app_handle.emit(
@@ -386,6 +423,10 @@ async fn handle_sign_request(
             "process_name": client_info.process_name,
             "process_path": client_info.process_path,
             "pid": client_info.pid,
+            // Data context — lets the user see what is being signed
+            "data_len": data.len(),
+            "data_sha256": data_sha256,
+            "data_preview": data_preview,
         }),
     );
 
@@ -415,11 +456,28 @@ async fn handle_sign_request(
         return AgentResponse::Failure;
     }
 
-    // Use the key_id from the decision (user may have selected a different key)
+    // Resolve the key to sign with.  When the user picked a different key in the
+    // consent UI we must validate that the selected ID actually exists in the vault
+    // and is active — this prevents a compromised frontend from substituting an
+    // arbitrary ID that was never presented to the user.
     let sign_key_id = if decision.selected_key_id.is_empty() {
         key_id
     } else {
-        decision.selected_key_id
+        let selected = decision.selected_key_id.clone();
+        // Verify the selected key exists in the vault and is active
+        let valid = SshKeyVault::list_keys(&app_state.vault_dir)
+            .unwrap_or_default()
+            .iter()
+            .any(|k| k.id == selected && k.state == maze_vault::KeyState::Active);
+        if !valid {
+            audit_service::log_action(
+                "sign_rejected",
+                Some(&key_item.name),
+                "invalid selected_key_id returned by consent UI",
+            );
+            return AgentResponse::Failure;
+        }
+        selected
     };
 
     // Save policy rule based on user's choice

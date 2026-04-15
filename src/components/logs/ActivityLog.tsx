@@ -21,7 +21,8 @@ export function ActivityLog() {
           <button
             type="button"
             onClick={clearLogs}
-            title="Clear"
+            title="Clear activity log"
+            aria-label="Clear activity log"
             className="p-0.5 rounded text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
           >
             <Trash2 size={10} />
@@ -38,7 +39,7 @@ export function ActivityLog() {
           return (
             <div key={log.id} className="flex items-start gap-1.5 py-px">
               <span className="text-muted-foreground/30 shrink-0 tabular-nums">
-                {new Date(log.timestamp).toLocaleTimeString()}
+                {new Date(log.timestamp).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
               </span>
               <Icon size={10} className={`${config.color} shrink-0 mt-px`} />
               <span className={`${config.color} shrink-0 font-medium`}>{log.action}</span>
