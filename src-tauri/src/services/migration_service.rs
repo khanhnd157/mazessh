@@ -147,7 +147,7 @@ pub fn migrate_profiles(
             name: format!("{} (migrated)", profile.name),
             comment: Some(profile.email.clone()),
             export_policy: None,
-            source_passphrase: passphrase,
+            source_passphrase: passphrase.as_ref().map(|p| p.as_str().to_string()),
         };
 
         match SshKeyVault::import_key(session, input, vault_dir) {

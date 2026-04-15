@@ -1,3 +1,5 @@
+use zeroize::Zeroizing;
+
 use crate::error::MazeSshError;
 
 const SERVICE_NAME: &str = "maze-ssh";
@@ -11,11 +13,13 @@ pub fn store_passphrase(profile_id: &str, passphrase: &str) -> Result<(), MazeSs
     Ok(())
 }
 
-pub fn get_passphrase(profile_id: &str) -> Result<Option<String>, MazeSshError> {
+/// Retrieve a stored SSH key passphrase from the system credential store.
+/// Returns `Zeroizing<String>` so the passphrase bytes are cleared when the caller drops the value.
+pub fn get_passphrase(profile_id: &str) -> Result<Option<Zeroizing<String>>, MazeSshError> {
     let entry = keyring::Entry::new(SERVICE_NAME, profile_id)
         .map_err(|e| MazeSshError::KeyringError(e.to_string()))?;
     match entry.get_password() {
-        Ok(pass) => Ok(Some(pass)),
+        Ok(pass) => Ok(Some(Zeroizing::new(pass))),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(MazeSshError::KeyringError(e.to_string())),
     }

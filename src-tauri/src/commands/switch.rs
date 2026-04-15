@@ -118,7 +118,7 @@ pub async fn activate_profile(
                 None
             };
             match ssh_engine::ensure_agent_running() {
-                Ok(true) => match ssh_engine::agent_switch_key(&key_path, passphrase.as_deref()) {
+                Ok(true) => match ssh_engine::agent_switch_key(&key_path, passphrase.as_ref().map(|p| p.as_str())) {
                     Ok(_) => status_parts.push("Key loaded into ssh-agent".to_string()),
                     Err(e) => status_parts.push(format!("ssh-add failed: {}", e)),
                 },
