@@ -19,12 +19,12 @@ pub fn build_git_ssh_command(profile: &SshProfile) -> String {
 
     if port == 22 {
         format!(
-            "ssh -i \"{}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new",
+            "ssh -i \"{}\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes",
             key_path
         )
     } else {
         format!(
-            "ssh -i \"{}\" -p {} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new",
+            "ssh -i \"{}\" -p {} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes",
             key_path, port
         )
     }
@@ -38,12 +38,12 @@ pub fn build_git_ssh_command_agent(profile: &SshProfile) -> String {
 
     if port == 22 {
         format!(
-            "ssh -o \"IdentityAgent={}\" -o StrictHostKeyChecking=accept-new",
+            "ssh -o \"IdentityAgent={}\" -o StrictHostKeyChecking=yes",
             pipe
         )
     } else {
         format!(
-            "ssh -o \"IdentityAgent={}\" -p {} -o StrictHostKeyChecking=accept-new",
+            "ssh -o \"IdentityAgent={}\" -p {} -o StrictHostKeyChecking=yes",
             pipe, port
         )
     }
@@ -320,6 +320,9 @@ mod tests {
         assert!(cmd.contains("id_ed25519"));
         assert!(cmd.contains("IdentitiesOnly=yes"));
         assert!(!cmd.contains("-p "));
+        // Must not use accept-new — that silently accepts unknown hosts (MITM risk)
+        assert!(!cmd.contains("accept-new"), "StrictHostKeyChecking must not be accept-new");
+        assert!(cmd.contains("StrictHostKeyChecking=yes"));
     }
 
     #[test]

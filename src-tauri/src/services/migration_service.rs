@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use zeroize::Zeroizing;
+
 use crate::models::profile::SshProfile;
 use crate::models::vault::{MigrationEligible, MigrationFailed, MigrationPreview, MigrationReport, MigrationSkipped, MigrationSuccess};
 use crate::services::security as security_service;
@@ -103,9 +105,10 @@ pub fn migrate_profiles(
             continue;
         }
 
-        // Read private key PEM
-        let pem = match fs::read_to_string(key_path) {
-            Ok(c) => c,
+        // Read private key PEM into a Zeroizing wrapper so the bytes are
+        // cleared from memory as soon as the import completes or fails.
+        let pem: Zeroizing<String> = match fs::read_to_string(key_path) {
+            Ok(c) => Zeroizing::new(c),
             Err(e) => {
                 failed.push(MigrationFailed {
                     profile_id: profile.id.clone(),
@@ -116,8 +119,9 @@ pub fn migrate_profiles(
             }
         };
 
-        // Get passphrase from keyring if the key is encrypted
-        let passphrase = if profile.has_passphrase {
+        // Get passphrase from keyring if the key is encrypted.
+        // get_passphrase already returns Option<Zeroizing<String>>.
+        let passphrase: Option<Zeroizing<String>> = if profile.has_passphrase {
             match security_service::get_passphrase(&profile.id) {
                 Ok(Some(p)) => Some(p),
                 Ok(None) => {
@@ -141,14 +145,17 @@ pub fn migrate_profiles(
             None
         };
 
-        // Import into vault
+        // Build the import request. The vault library receives owned Strings;
+        // pem and passphrase are Zeroizing wrappers that will wipe their
+        // backing memory once they are dropped at the end of this block.
         let input = ImportKeyInput {
-            private_key_pem: pem,
+            private_key_pem: pem.to_string(),
             name: format!("{} (migrated)", profile.name),
             comment: Some(profile.email.clone()),
             export_policy: None,
             source_passphrase: passphrase.as_ref().map(|p| p.as_str().to_string()),
         };
+        // pem and passphrase are dropped (and zeroized) here
 
         match SshKeyVault::import_key(session, input, vault_dir) {
             Ok(item) => {

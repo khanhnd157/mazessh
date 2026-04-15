@@ -73,11 +73,24 @@ pub fn import_profiles(
         }
         profile.private_key_path = priv_canonical;
 
-        // Normalize public key path (best-effort)
+        // Validate and canonicalize public key path: must exist and be inside home directory.
+        // This prevents a malicious import from pointing public_key_path at an arbitrary
+        // file (e.g. credentials.json) that read_public_key would then return verbatim.
         if !profile.public_key_path.as_os_str().is_empty() {
-            if let Ok(pub_canonical) = profile.public_key_path.canonicalize() {
-                profile.public_key_path = pub_canonical;
+            let pub_canonical = profile.public_key_path.canonicalize().map_err(|_| {
+                MazeSshError::ValidationError(format!(
+                    "Profile '{}': public key file not found: {}",
+                    profile.name,
+                    profile.public_key_path.display()
+                ))
+            })?;
+            if !pub_canonical.starts_with(&home) {
+                return Err(MazeSshError::ValidationError(format!(
+                    "Profile '{}': public key path must be under the home directory",
+                    profile.name
+                )));
             }
+            profile.public_key_path = pub_canonical;
         }
 
         profile.id = uuid::Uuid::new_v4().to_string();
