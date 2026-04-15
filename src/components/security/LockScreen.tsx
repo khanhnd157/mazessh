@@ -79,7 +79,7 @@ export function LockScreen() {
       aria-label={isSetup ? "Set up PIN" : "Unlock Maze SSH"}
       className="fixed inset-0 z-100 bg-background flex flex-col"
       onKeyDown={(e) => {
-        if (e.key !== "Tab") e.stopPropagation();
+        e.stopPropagation();
       }}
     >
       {/* Mini titlebar */}

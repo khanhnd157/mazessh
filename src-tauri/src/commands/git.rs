@@ -65,15 +65,20 @@ pub async fn test_ssh_connection(
     }
     args.push(format!("git@{}", hostname));
 
-    // On Windows, prefer the system OpenSSH
+    // On Windows, prefer the system OpenSSH; fail if not found in trusted locations
     #[cfg(windows)]
     let ssh_bin = {
-        let system_ssh = std::path::Path::new("C:\\Windows\\System32\\OpenSSH\\ssh.exe");
-        if system_ssh.exists() {
-            system_ssh.to_string_lossy().to_string()
-        } else {
-            "ssh".to_string()
-        }
+        let candidates = [
+            r"C:\Windows\System32\OpenSSH\ssh.exe",
+            r"C:\Program Files\Git\usr\bin\ssh.exe",
+            r"C:\Program Files\Git\bin\ssh.exe",
+        ];
+        candidates.iter()
+            .find(|p| std::path::Path::new(p).exists())
+            .map(|p| p.to_string())
+            .ok_or_else(|| MazeSshError::ConnectionFailed(
+                "ssh not found in trusted locations (checked System32\\OpenSSH and Git)".to_string()
+            ))?
     };
     #[cfg(not(windows))]
     let ssh_bin = "ssh".to_string();
@@ -107,7 +112,7 @@ pub async fn test_ssh_connection(
         || output.status.success();
 
     let display_output = if combined_output.trim().is_empty() {
-        format!("SSH command: {} {}\n(no output, exit code: {})", ssh_bin, args.join(" "), exit_code)
+        format!("SSH test completed (exit code: {})", exit_code)
     } else {
         combined_output.trim().to_string()
     };

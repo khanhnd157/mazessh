@@ -1233,14 +1233,13 @@ pub fn test_ssh_via_bridge(
 ) -> Result<crate::models::bridge::SshHostTestResult, MazeSshError> {
     use crate::models::bridge::SshHostTestResult;
 
-    // Validate host: non-empty, no shell metacharacters
+    // Validate host: non-empty, only RFC-valid hostname/IP chars (no whitespace, no shell metacharacters)
     if host.is_empty() {
         return Err(MazeSshError::BridgeError("Host cannot be empty".to_string()));
     }
-    let forbidden_chars = [';', '&', '|', '$', '`', '(', ')', '\\', '"', '\'', '\n'];
-    if host.chars().any(|c| forbidden_chars.contains(&c)) {
+    if !host.chars().all(|c| c.is_alphanumeric() || "-._[]".contains(c)) {
         return Err(MazeSshError::BridgeError(
-            "Host contains invalid characters".to_string(),
+            "Host contains invalid characters (allowed: a-z A-Z 0-9 - . _ [ ])".to_string(),
         ));
     }
 
@@ -1260,15 +1259,22 @@ pub fn test_ssh_via_bridge(
     // port is u16 so 1–65535 is guaranteed by the type
 
     let socket_path = resolve_socket_path(config, distro);
-    let cmd = format!(
-        "env SSH_AUTH_SOCK={socket} ssh -T -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=8 -p {port} {user}@{host}",
-        socket = socket_path,
-        port = port,
-        user = user,
-        host = host,
-    );
 
-    let output = wsl_service::run_in_wsl(distro, &["bash", "-c", &cmd])
+    // Build argv — never use bash -c with user-supplied values to prevent shell injection
+    let socket_env = format!("SSH_AUTH_SOCK={}", socket_path);
+    let port_str = port.to_string();
+    let destination = format!("{}@{}", user, host);
+    let argv: Vec<&str> = vec![
+        "env", &socket_env,
+        "ssh", "-T",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "BatchMode=yes",
+        "-o", "ConnectTimeout=8",
+        "-p", &port_str,
+        &destination,
+    ];
+
+    let output = wsl_service::run_in_wsl(distro, &argv)
         .map_err(|e| MazeSshError::BridgeError(e.to_string()))?;
 
     let combined = format!("{}{}", output.stdout, output.stderr);
@@ -1287,9 +1293,13 @@ pub fn test_ssh_via_bridge(
         || lower.contains("you've successfully authenticated");
 
     let exit_code = if output.success { 0i32 } else { 1i32 };
+    let display_cmd = format!(
+        "env SSH_AUTH_SOCK=<socket> ssh -T -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=8 -p {} {}@{}",
+        port, user, host
+    );
 
     Ok(SshHostTestResult {
-        command: cmd,
+        command: display_cmd,
         output: combined.trim().to_string(),
         connected,
         authenticated,
