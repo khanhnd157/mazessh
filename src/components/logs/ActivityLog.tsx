@@ -21,7 +21,8 @@ export function ActivityLog() {
           <button
             type="button"
             onClick={clearLogs}
-            title="Clear"
+            title="Clear activity log"
+            aria-label="Clear activity log"
             className="p-0.5 rounded text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
           >
             <Trash2 size={10} />

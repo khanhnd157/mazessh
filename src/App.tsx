@@ -126,36 +126,42 @@ function App() {
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <div className="flex border-b bg-card/30 h-10 shrink-0" role="tablist" aria-label="Main navigation">
             <TabButton
+              id="tab-profiles"
               icon={<KeyRound size={14} />}
               label="Profiles"
               active={activeTab === "profiles"}
               onClick={() => setActiveTab("profiles")}
             />
             <TabButton
+              id="tab-vault"
               icon={<Shield size={14} />}
               label="Key Vault"
               active={activeTab === "vault"}
               onClick={() => setActiveTab("vault")}
             />
             <TabButton
+              id="tab-repos"
               icon={<FolderGit2 size={14} />}
               label="Repo Mappings"
               active={activeTab === "repos"}
               onClick={() => setActiveTab("repos")}
             />
             <TabButton
+              id="tab-config"
               icon={<FileCode2 size={14} />}
               label="SSH Config"
               active={activeTab === "config"}
               onClick={() => setActiveTab("config")}
             />
             <TabButton
+              id="tab-bridge"
               icon={<Monitor size={14} />}
               label="WSL Bridge"
               active={activeTab === "bridge"}
               onClick={() => setActiveTab("bridge")}
             />
             <TabButton
+              id="tab-settings"
               icon={<Settings size={14} />}
               label="Settings"
               active={activeTab === "settings"}
@@ -164,22 +170,22 @@ function App() {
           </div>
           {/* All panels stay mounted; active panel fades in, others hidden */}
           <div className="flex-1 min-h-0 overflow-hidden relative">
-            <TabPanel active={activeTab === "profiles"}>
+            <TabPanel id="panel-profiles" labelledBy="tab-profiles" active={activeTab === "profiles"}>
               <MainPanel />
             </TabPanel>
-            <TabPanel active={activeTab === "vault"} scrollable>
+            <TabPanel id="panel-vault" labelledBy="tab-vault" active={activeTab === "vault"} scrollable>
               <KeyVaultList />
             </TabPanel>
-            <TabPanel active={activeTab === "repos"} scrollable>
+            <TabPanel id="panel-repos" labelledBy="tab-repos" active={activeTab === "repos"} scrollable>
               <RepoMappingList />
             </TabPanel>
-            <TabPanel active={activeTab === "config"} scrollable>
+            <TabPanel id="panel-config" labelledBy="tab-config" active={activeTab === "config"} scrollable>
               <ConfigPreview />
             </TabPanel>
-            <TabPanel active={activeTab === "bridge"} scrollable>
+            <TabPanel id="panel-bridge" labelledBy="tab-bridge" active={activeTab === "bridge"} scrollable>
               <WslBridgePanel />
             </TabPanel>
-            <TabPanel active={activeTab === "settings"} scrollable>
+            <TabPanel id="panel-settings" labelledBy="tab-settings" active={activeTab === "settings"} scrollable>
               <SecuritySettingsPanel />
             </TabPanel>
           </div>
@@ -192,11 +198,13 @@ function App() {
 }
 
 function TabButton({
+  id,
   icon,
   label,
   active,
   onClick,
 }: {
+  id: string;
   icon: React.ReactNode;
   label: string;
   active: boolean;
@@ -204,9 +212,11 @@ function TabButton({
 }) {
   return (
     <button
+      id={id}
       type="button"
       role="tab"
       aria-selected={active}
+      aria-controls={id.replace("tab-", "panel-")}
       onClick={onClick}
       className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-all duration-150 ${
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -226,10 +236,14 @@ function TabButton({
 }
 
 function TabPanel({
+  id,
+  labelledBy,
   active,
   scrollable,
   children,
 }: {
+  id: string;
+  labelledBy: string;
   active: boolean;
   scrollable?: boolean;
   children: ReactNode;
@@ -241,7 +255,9 @@ function TabPanel({
 
   return (
     <div
+      id={id}
       role="tabpanel"
+      aria-labelledby={labelledBy}
       aria-hidden={!active}
       tabIndex={active ? 0 : -1}
       className={`absolute inset-0 transition-opacity duration-150 ease-in-out ${
