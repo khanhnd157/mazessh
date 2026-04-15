@@ -37,6 +37,15 @@ export function KeyVaultList() {
     }
   }, [vaultState?.unlocked, fetchKeys]);
 
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return keys.filter((k) => {
+      if (filterState !== "all" && k.state !== filterState) return false;
+      if (q) return k.name.toLowerCase().includes(q) || k.fingerprint.toLowerCase().includes(q);
+      return true;
+    });
+  }, [keys, filterState, search]);
+
   // Vault not initialized
   if (vaultState && !vaultState.initialized) {
     return <VaultSetupPrompt />;
@@ -46,15 +55,6 @@ export function KeyVaultList() {
   if (vaultState && !vaultState.unlocked) {
     return <VaultUnlockPrompt />;
   }
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return keys.filter((k) => {
-      if (filterState !== "all" && k.state !== filterState) return false;
-      if (q) return k.name.toLowerCase().includes(q) || k.fingerprint.toLowerCase().includes(q);
-      return true;
-    });
-  }, [keys, filterState, search]);
 
   return (
     <div className="space-y-4">
