@@ -49,7 +49,14 @@ ssh-key = { workspace = true }
 subtle = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Pipes", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+] }
 
 [features]
 default = ["desktop"]

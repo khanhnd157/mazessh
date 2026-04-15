@@ -31,22 +31,71 @@ pub fn start_agent_daemon(app_handle: tauri::AppHandle) -> Arc<Notify> {
     shutdown
 }
 
+/// Create a named pipe server restricted to the current user and SYSTEM via DACL.
+///
+/// Uses `ConvertStringSecurityDescriptorToSecurityDescriptorW` with SDDL
+/// `D:(A;;GA;;;SY)(A;;GA;;;OW)` (SYSTEM + Owner: Generic All) so that no
+/// other local user or lower-integrity process can connect to the pipe.
+#[cfg(windows)]
+fn create_secure_pipe_server(
+    pipe_name: &str,
+    first_instance: bool,
+) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+    use tokio::net::windows::named_pipe::ServerOptions;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
+    use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+
+    // SDDL: Allow Generic All for SYSTEM (SY) and the pipe owner (OW = current user)
+    let sddl = "D:(A;;GA;;;SY)(A;;GA;;;OW)";
+    let sddl_wide: Vec<u16> = sddl.encode_utf16().chain(std::iter::once(0)).collect();
+
+    let mut sd_ptr: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut sd_size: u32 = 0;
+
+    unsafe {
+        if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl_wide.as_ptr(),
+            1, // SDDL_REVISION_1
+            &mut sd_ptr,
+            &mut sd_size,
+        ) == 0
+        {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        let sa = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: sd_ptr,
+            bInheritHandle: 0,
+        };
+
+        let result = ServerOptions::new()
+            .first_pipe_instance(first_instance)
+            // SAFETY: sa is initialised above with a valid security descriptor.
+            .create_with_security_attributes_raw(
+                pipe_name,
+                &sa as *const SECURITY_ATTRIBUTES as *mut core::ffi::c_void,
+            );
+
+        // Free the LocalAlloc-allocated security descriptor regardless of outcome
+        LocalFree(sd_ptr);
+
+        result
+    }
+}
+
 #[cfg(windows)]
 async fn run_agent_loop(
     app_handle: tauri::AppHandle,
     shutdown: Arc<Notify>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use tokio::net::windows::named_pipe::ServerOptions;
-
     // Limit concurrent connections to prevent resource exhaustion
     let semaphore = Arc::new(tokio::sync::Semaphore::new(100));
 
     loop {
-        // Create a new pipe server instance
-        let server = match ServerOptions::new()
-            .first_pipe_instance(false)
-            .create(PIPE_NAME)
-        {
+        // Create a new pipe server instance restricted to SYSTEM + current user
+        let server = match create_secure_pipe_server(PIPE_NAME, false) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[maze-agent] failed to create pipe: {e}");
