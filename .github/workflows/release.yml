@@ -131,12 +131,11 @@ jobs:
           sudo apt-get install -y libdbus-1-dev libssl-dev
 
       - name: Build CLI
-        working-directory: src-tauri
-        run: cargo build --bin maze-ssh-cli --no-default-features --release --target ${{ matrix.target }}
+        run: cargo build --manifest-path src-tauri/Cargo.toml --bin maze-ssh-cli --no-default-features --release --target ${{ matrix.target }}
 
       - name: Rename artifact
         shell: bash
-        run: cp "src-tauri/target/${{ matrix.target }}/release/maze-ssh-cli${{ matrix.ext }}" "${{ matrix.artifact }}"
+        run: cp "target/${{ matrix.target }}/release/maze-ssh-cli${{ matrix.ext }}" "${{ matrix.artifact }}"
 
       - name: Upload CLI to release
         uses: softprops/action-gh-release@v2
