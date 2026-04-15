@@ -1,6 +1,10 @@
 use crate::error::AgentError;
 use crate::message::*;
 
+/// Maximum allowed SSH agent message size (256 KB). Messages larger than this
+/// are rejected to prevent DoS via memory exhaustion.
+const MAX_MESSAGE_SIZE: usize = 262_144;
+
 // ─── Wire format helpers ─────────────────────────────────────────
 
 /// Read a 4-byte big-endian u32 from a buffer at the given offset.
@@ -19,6 +23,11 @@ fn read_u32(buf: &[u8], offset: usize) -> Result<(u32, usize), AgentError> {
 fn read_string(buf: &[u8], offset: usize) -> Result<(Vec<u8>, usize), AgentError> {
     let (len, pos) = read_u32(buf, offset)?;
     let len = len as usize;
+    if len > MAX_MESSAGE_SIZE {
+        return Err(AgentError::InvalidFormat(
+            format!("string too large: {} bytes", len),
+        ));
+    }
     if buf.len() < pos + len {
         return Err(AgentError::TooShort {
             need: pos + len,
@@ -55,7 +64,13 @@ pub fn decode_message(buf: &[u8]) -> Result<AgentMessage, AgentError> {
     }
 
     let (msg_len, _) = read_u32(buf, 0)?;
-    let total_len = 4 + msg_len as usize;
+    let msg_len = msg_len as usize;
+    if msg_len > MAX_MESSAGE_SIZE {
+        return Err(AgentError::InvalidFormat(
+            format!("message too large: {} bytes (max {})", msg_len, MAX_MESSAGE_SIZE),
+        ));
+    }
+    let total_len = 4 + msg_len;
     if buf.len() < total_len {
         return Err(AgentError::TooShort {
             need: total_len,
@@ -160,7 +175,11 @@ pub fn try_read_frame(buf: &[u8]) -> Option<(Vec<u8>, usize)> {
         return None;
     }
     let msg_len = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-    let total = 4 + msg_len;
+    // Reject oversized messages to prevent DoS / integer overflow
+    if msg_len > MAX_MESSAGE_SIZE {
+        return None;
+    }
+    let total = 4 + msg_len; // safe: msg_len <= MAX_MESSAGE_SIZE, no overflow
     if buf.len() < total {
         return None;
     }
