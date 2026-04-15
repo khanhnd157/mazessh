@@ -161,10 +161,30 @@ fn parse_distro_list(text: &str) -> Result<Vec<WslDistro>, MazeSshError> {
 /// Maximum time to wait for a WSL command before killing it and returning an error.
 const WSL_CMD_TIMEOUT_SECS: u64 = 30;
 
+/// Validate WSL distro name: must be non-empty, reasonable length,
+/// and contain only characters valid in WSL distro names.
+fn validate_distro_name(distro: &str) -> Result<(), MazeSshError> {
+    if distro.trim().is_empty() {
+        return Err(MazeSshError::WslCommandFailed("Distro name cannot be empty".to_string()));
+    }
+    if distro.len() > 128 {
+        return Err(MazeSshError::WslCommandFailed("Distro name too long (max 128 chars)".to_string()));
+    }
+    // WSL distro names: alphanumeric, hyphens, underscores, spaces, dots (no shell metacharacters)
+    if !distro.chars().all(|c| c.is_alphanumeric() || " -_.".contains(c)) {
+        return Err(MazeSshError::WslCommandFailed(format!(
+            "Distro name '{}' contains invalid characters",
+            distro
+        )));
+    }
+    Ok(())
+}
+
 /// Run a command inside a specific WSL distro with a hard 30-second timeout.
 /// If the distro hangs or becomes unresponsive the child process is killed and
 /// an error is returned instead of blocking the caller indefinitely.
 pub fn run_in_wsl(distro: &str, args: &[&str]) -> Result<CmdOutput, MazeSshError> {
+    validate_distro_name(distro)?;
     let mut cmd = hidden_cmd("wsl");
     cmd.args(["-d", distro, "--"]);
     cmd.args(args);

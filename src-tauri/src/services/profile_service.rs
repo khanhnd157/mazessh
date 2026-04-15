@@ -41,10 +41,16 @@ pub fn save_profiles(profiles: &[SshProfile]) -> Result<(), MazeSshError> {
 
 /// Write content to a file atomically: write to a temp file, then rename.
 /// This prevents corruption if the process crashes mid-write.
+/// On Unix, sets file permissions to 0600 (owner read/write only).
 pub fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), std::io::Error> {
     let tmp_path = path.with_extension("tmp");
     fs::write(&tmp_path, content)?;
     fs::rename(&tmp_path, path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
     Ok(())
 }
 

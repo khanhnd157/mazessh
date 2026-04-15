@@ -204,7 +204,7 @@ fn cmd_use(name: &str) -> Result<(), String> {
     // SSH agent
     match ssh_engine::ensure_agent_running() {
         Ok(true) => {
-            match ssh_engine::agent_switch_key(&profile.private_key_path.to_string_lossy()) {
+            match ssh_engine::agent_switch_key(&profile.private_key_path.to_string_lossy(), None) {
                 Ok(_) => println!("  {} Key loaded into ssh-agent", "✓".green()),
                 Err(e) => println!("  {} ssh-add failed: {}", "✗".red(), e),
             }
