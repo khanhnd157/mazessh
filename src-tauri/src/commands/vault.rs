@@ -142,6 +142,7 @@ pub fn vault_generate_key(
         export_policy: request.allow_private_export.map(|allow| ExportPolicy {
             allow_private_export: allow,
         }),
+        allowed_hosts: request.allowed_hosts,
     };
 
     let item = SshKeyVault::generate_key(session, input, &state.vault_dir)?;
@@ -213,6 +214,7 @@ pub fn vault_update_key(
         export_policy: request.allow_private_export.map(|allow| ExportPolicy {
             allow_private_export: allow,
         }),
+        allowed_hosts: None,
     };
 
     let item = SshKeyVault::update_key(&id, input, &state.vault_dir)?;

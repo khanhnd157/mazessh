@@ -156,6 +156,7 @@ impl SshKeyVault {
             state: KeyState::Active,
             export_policy: input.export_policy.unwrap_or_default(),
             comment,
+            allowed_hosts: input.allowed_hosts,
             created_at: now,
             updated_at: now,
         };
@@ -228,6 +229,7 @@ impl SshKeyVault {
             state: KeyState::Active,
             export_policy: input.export_policy.unwrap_or_default(),
             comment,
+            allowed_hosts: Vec::new(),
             created_at: now,
             updated_at: now,
         };
@@ -282,6 +284,9 @@ impl SshKeyVault {
         }
         if let Some(policy) = input.export_policy {
             key.export_policy = policy;
+        }
+        if let Some(hosts) = input.allowed_hosts {
+            key.allowed_hosts = hosts;
         }
         key.updated_at = Utc::now();
 

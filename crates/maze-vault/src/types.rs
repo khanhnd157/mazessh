@@ -57,6 +57,10 @@ pub struct SshKeyItem {
     pub state: KeyState,
     pub export_policy: ExportPolicy,
     pub comment: String,
+    /// Host restrictions: if non-empty, key is only offered for these hosts.
+    /// Empty = key offered for all hosts.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -70,6 +74,8 @@ pub struct SshKeyItemSummary {
     pub algorithm: KeyAlgorithm,
     pub fingerprint: String,
     pub state: KeyState,
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -81,6 +87,7 @@ impl From<&SshKeyItem> for SshKeyItemSummary {
             algorithm: item.algorithm,
             fingerprint: item.fingerprint.clone(),
             state: item.state,
+            allowed_hosts: item.allowed_hosts.clone(),
             created_at: item.created_at,
         }
     }
@@ -127,6 +134,8 @@ pub struct GenerateKeyInput {
     pub algorithm: KeyAlgorithm,
     pub comment: Option<String>,
     pub export_policy: Option<ExportPolicy>,
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,4 +153,5 @@ pub struct UpdateKeyInput {
     pub name: Option<String>,
     pub comment: Option<String>,
     pub export_policy: Option<ExportPolicy>,
+    pub allowed_hosts: Option<Vec<String>>,
 }

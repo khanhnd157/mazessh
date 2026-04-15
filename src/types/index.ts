@@ -134,6 +134,7 @@ export interface SshKeyItem {
   state: KeyState;
   export_policy: ExportPolicy;
   comment: string;
+  allowed_hosts: string[];
   created_at: string;
   updated_at: string;
 }
@@ -144,6 +145,7 @@ export interface SshKeyItemSummary {
   algorithm: KeyAlgorithm;
   fingerprint: string;
   state: KeyState;
+  allowed_hosts: string[];
   created_at: string;
 }
 
@@ -152,6 +154,7 @@ export interface GenerateKeyRequest {
   algorithm: KeyAlgorithm;
   comment?: string | null;
   allow_private_export?: boolean | null;
+  allowed_hosts?: string[];
 }
 
 export interface ImportKeyRequest {

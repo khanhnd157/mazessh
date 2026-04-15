@@ -13,6 +13,7 @@ export function GenerateKeyDialog({ onClose }: Props) {
   const [name, setName] = useState("");
   const [algorithm, setAlgorithm] = useState<KeyAlgorithm>("ed25519");
   const [comment, setComment] = useState("");
+  const [allowedHosts, setAllowedHosts] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,10 +31,12 @@ export function GenerateKeyDialog({ onClose }: Props) {
     setError(null);
     setSubmitting(true);
     try {
+      const hosts = allowedHosts.split(",").map((h) => h.trim()).filter(Boolean);
       const item = await generateKey({
         name,
         algorithm,
         comment: comment || null,
+        allowed_hosts: hosts.length > 0 ? hosts : undefined,
       });
       await navigator.clipboard.writeText(item.public_key_openssh);
       toast.success(`Key "${name}" generated`, { description: "Public key copied to clipboard" });
@@ -63,7 +66,7 @@ export function GenerateKeyDialog({ onClose }: Props) {
             <h3 className="text-sm font-semibold leading-tight">Generate SSH Key</h3>
             <p className="text-xs text-muted-foreground mt-1">Create a new SSH key pair stored in the vault</p>
           </div>
-          <button type="button" onClick={onClose} className="p-1 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors shrink-0 -mt-0.5">
+          <button type="button" onClick={onClose} title="Close" className="p-1 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-secondary transition-colors shrink-0 -mt-0.5">
             <X size={14} />
           </button>
         </div>
@@ -116,6 +119,19 @@ export function GenerateKeyDialog({ onClose }: Props) {
               placeholder="user@hostname"
               className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Allowed Hosts (optional)</label>
+            <input
+              value={allowedHosts}
+              onChange={(e) => setAllowedHosts(e.target.value)}
+              placeholder="github.com, gitlab.com"
+              className="w-full px-3 py-2 rounded-lg bg-secondary border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="text-[10px] text-muted-foreground/40 mt-1">
+              Comma-separated. Leave empty to allow all hosts.
+            </p>
           </div>
         </div>
 

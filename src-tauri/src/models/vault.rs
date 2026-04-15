@@ -16,6 +16,8 @@ pub struct GenerateKeyRequest {
     pub algorithm: KeyAlgorithm,
     pub comment: Option<String>,
     pub allow_private_export: Option<bool>,
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 /// Frontend-facing import request
