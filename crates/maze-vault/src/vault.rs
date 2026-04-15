@@ -367,9 +367,13 @@ impl SshKeyVault {
             return Err(VaultError::ExportDenied);
         }
 
-        let pem_bytes = decrypt_key_file(session.vek(), id, vault_dir)?;
-        String::from_utf8(pem_bytes)
-            .map_err(|e| VaultError::KeyParseError(format!("private key is not valid UTF-8: {e}")))
+        let mut pem_bytes = decrypt_key_file(session.vek(), id, vault_dir)?;
+        // Build the string from a borrow so we can zeroize pem_bytes before returning
+        let pem_str = std::str::from_utf8(&pem_bytes)
+            .map_err(|e| VaultError::KeyParseError(format!("private key is not valid UTF-8: {e}")))?
+            .to_string();
+        pem_bytes.zeroize();
+        Ok(pem_str)
     }
 
     // ── Signing (M2) ────────────────────────────────────────────
